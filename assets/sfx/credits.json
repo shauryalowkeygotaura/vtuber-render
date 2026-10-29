@@ -1,0 +1,23 @@
+{
+ "pop.mp3": {
+  "title": "Pop 01.wav",
+  "creator": "MATRIXXX_",
+  "license": "cc0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source": "https://freesound.org/people/MATRIXXX_/sounds/506546"
+ },
+ "soft-whoosh.mp3": {
+  "title": "whoosh.soft.wav",
+  "creator": "junggle",
+  "license": "by",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "source": "https://freesound.org/people/junggle/sounds/73263"
+ },
+ "record-scratch.mp3": {
+  "title": "Scratch Speed.wav",
+  "creator": "Racche",
+  "license": "by",
+  "license_url": "https://creativecommons.org/licenses/by/3.0/",
+  "source": "https://freesound.org/people/Racche/sounds/160909"
+ }
+}

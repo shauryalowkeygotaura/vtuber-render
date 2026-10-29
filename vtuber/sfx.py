@@ -38,7 +38,7 @@ def _safe_query(q: str) -> str:
     return q
 
 
-def _get(url: str, timeout: int = 20) -> bytes:
+def _get(url: str, timeout: int = 60) -> bytes:  # Openverse search can take 20 s+
     req = urllib.request.Request(url, headers=UA)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         if r.status != 200:
@@ -101,8 +101,18 @@ def cues(beats: list[dict]) -> list[tuple[float, Path, int]]:
     return out
 
 
+def _peak_db(clip: Path) -> float:
+    """Clip peak in dBFS. Freesound uploads range from -0.3 to -20 dB, so the
+    cue gain only means something after peak-normalising."""
+    proc = subprocess.run(["ffmpeg", "-i", str(clip), "-af", "volumedetect", "-f", "null", "-"],
+                          capture_output=True, check=False)
+    m = re.search(r"max_volume: (-?[\d.]+) dB", proc.stderr.decode(errors="replace"))
+    return float(m.group(1)) if m else 0.0
+
+
 def mix(voice: str, placed: list[tuple[float, Path, int]], dest: Path) -> Path:
-    """Voice + placed effects -> one wav. Voice level is untouched."""
+    """Voice + placed effects -> one wav. Voice level is untouched; each effect
+    peaks at `gain` dBFS."""
     if not placed:
         return Path(voice)
     args = ["ffmpeg", "-v", "error", "-y", "-i", voice]
@@ -110,7 +120,8 @@ def mix(voice: str, placed: list[tuple[float, Path, int]], dest: Path) -> Path:
     for i, (t, clip, gain) in enumerate(placed, start=1):
         args += ["-i", str(clip)]
         ms = int(t * 1000)
-        chains.append(f"[{i}:a]aformat=channel_layouts=mono,volume={gain}dB,adelay={ms}:all=1[s{i}]")
+        level = gain - _peak_db(clip)
+        chains.append(f"[{i}:a]aformat=channel_layouts=mono,volume={level:.1f}dB,adelay={ms}:all=1[s{i}]")
     labels = "".join(f"[s{i}]" for i in range(1, len(placed) + 1))
     graph = ";".join(chains) + f";[0:a]{labels}amix=inputs={len(placed) + 1}:duration=first:normalize=0[out]"
     args += ["-filter_complex", graph, "-map", "[out]", str(dest)]
