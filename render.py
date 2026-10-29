@@ -27,7 +27,7 @@ import threading
 import time
 from pathlib import Path
 
-from vtuber import lipsync, motion, performance
+from vtuber import lipsync, motion, performance, sfx
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "output"
@@ -71,6 +71,7 @@ def main() -> int:
     ap.add_argument("--size", default="1080x1920")
     ap.add_argument("--alpha", action="store_true", help="transparent VP9 .webm")
     ap.add_argument("--no-llm", action="store_true")
+    ap.add_argument("--sfx", action="store_true", help="add sparse Openverse sound effects on big beats")
     ap.add_argument("--seconds", type=float, help="render only the first N seconds")
     ap.add_argument("--still", type=float, help="write one PNG at this time and stop")
     ap.add_argument("--out")
@@ -89,6 +90,11 @@ def main() -> int:
     tl = motion.build(lip, beats, a.fps)
     (OUT / f"{stem}.beats.json").write_text(json.dumps(beats, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"  analysed {tl['frames']} frames, {len(beats)} directed beats in {time.time() - t0:.1f}s")
+    soundtrack = a.audio
+    if a.sfx:
+        placed = sfx.cues(beats)
+        soundtrack = str(sfx.mix(a.audio, placed, OUT / f"{stem}.mix.wav"))
+        print(f"  sfx: {len(placed)} placed (credits in assets/sfx/credits.json)")
 
     avatar = Path(a.avatar).resolve()
     if not avatar.is_relative_to(ROOT):
@@ -138,7 +144,7 @@ def main() -> int:
                        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"])
             ff = subprocess.Popen(
                 ["ffmpeg", "-v", "error", "-y", "-f", "image2pipe", "-framerate", str(a.fps), "-i", "-",
-                 "-i", a.audio, "-map", "0:v", "-map", "1:a", *vcodec, "-t", f"{n / a.fps:.3f}", str(out)],
+                 "-i", soundtrack, "-map", "0:v", "-map", "1:a", *vcodec, "-t", f"{n / a.fps:.3f}", str(out)],
                 stdin=subprocess.PIPE,
             )
             t1 = time.time()

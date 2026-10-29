@@ -35,3 +35,27 @@ def test_build_is_deterministic_and_frame_aligned():
     assert a == b
     assert len(a["head"]["pitch"]) == len(a["blink"]) == lip["frames"]
     assert max(a["face"]["happy"]) > 0.3
+
+
+def test_sfx_only_on_big_beats_and_spaced(monkeypatch):
+    from pathlib import Path
+
+    from vtuber import sfx
+    monkeypatch.setattr(sfx, "fetch", lambda q, m: Path(f"{q}.mp3"))
+    beats = [
+        {"start": 0.5, "expression": "surprised", "intensity": 0.9, "gesture": "none"},
+        {"start": 1.0, "expression": "neutral", "intensity": 0.5, "gesture": "lean_in"},   # too close
+        {"start": 4.0, "expression": "happy", "intensity": 0.6, "gesture": "nod"},        # no cue
+        {"start": 6.0, "expression": "neutral", "intensity": 0.5, "gesture": "lean_in"},
+    ]
+    placed = sfx.cues(beats)
+    assert [(t, p.name) for t, p, _ in placed] == [(0.5, "pop.mp3"), (6.0, "soft whoosh.mp3")]
+
+
+def test_sfx_query_is_whitelisted():
+    import pytest
+
+    from vtuber import sfx
+    for bad in ("pop;rm", "../x", "Pop", "a  b"):
+        with pytest.raises(ValueError):
+            sfx._safe_query(bad)
