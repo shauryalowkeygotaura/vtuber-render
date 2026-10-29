@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>vtuber-render stage</title>
+<style>html,body{margin:0;background:transparent;overflow:hidden}canvas{display:block}</style>
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
+  "@pixiv/three-vrm":"https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+}}
+</script>
+</head>
+<body>
+<script type="module">
+// A dumb puppet: Python computes every pose (vtuber/motion.py), this page
+// applies frame i, steps spring-bone physics by exactly 1/fps and returns a
+// picture. No clocks, no requestAnimationFrame: deterministic renders.
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
+
+let renderer, scene, camera, vrm, tl, lookTarget, alpha;
+
+function backdrop(w, h) {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  const lin = g.createLinearGradient(0, 0, 0, h);
+  lin.addColorStop(0, "#1a0b0d"); lin.addColorStop(1, "#0A0807");
+  g.fillStyle = lin; g.fillRect(0, 0, w, h);
+  const rad = g.createRadialGradient(w / 2, h * 0.42, 10, w / 2, h * 0.42, h * 0.5);
+  rad.addColorStop(0, "rgba(114,47,55,0.55)"); rad.addColorStop(1, "rgba(114,47,55,0)");
+  g.fillStyle = rad; g.fillRect(0, 0, w, h);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+window.init = async (vrmUrl, w, h, transparent) => {
+  alpha = transparent;
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1);
+  renderer.setSize(w, h);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setClearColor(0x000000, 0);
+  document.body.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  if (!transparent) scene.background = backdrop(w, h);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+  const key = new THREE.DirectionalLight(0xfff4e8, 1.6); key.position.set(0.6, 1.4, 1.5); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xc0505e, 1.4); rim.position.set(-1.2, 1.6, -1.0); scene.add(rim);
+
+  const loader = new GLTFLoader();
+  loader.register((p) => new VRMLoaderPlugin(p));
+  const gltf = await loader.loadAsync(vrmUrl);
+  vrm = gltf.userData.vrm;
+  VRMUtils.removeUnnecessaryVertices(gltf.scene);
+  VRMUtils.combineSkeletons(gltf.scene);
+  if (vrm.meta?.metaVersion === "0") VRMUtils.rotateVRM0(vrm);
+  scene.add(vrm.scene);
+
+  // T-pose -> relaxed arms
+  const H = vrm.humanoid;
+  H.getNormalizedBoneNode("leftUpperArm").rotation.z = -1.25;
+  H.getNormalizedBoneNode("rightUpperArm").rotation.z = 1.25;
+  // soft elbows + turned wrists: dead-straight arms read as a mannequin
+  H.getNormalizedBoneNode("leftLowerArm").rotation.set(0, -0.35, -0.12);
+  H.getNormalizedBoneNode("rightLowerArm").rotation.set(0, 0.35, 0.12);
+  H.getNormalizedBoneNode("leftHand").rotation.set(0, 0, -0.2);
+  H.getNormalizedBoneNode("rightHand").rotation.set(0, 0, 0.2);
+  vrm.update(0);
+
+  const head = new THREE.Vector3();
+  H.getNormalizedBoneNode("head").getWorldPosition(head);
+  camera = new THREE.PerspectiveCamera(28, w / h, 0.05, 20);
+  // 9:16 bust: top of the hair to mid-torso, eyes on the upper third
+  camera.position.set(0, head.y - 0.02, 1.55);
+  camera.lookAt(0, head.y - 0.17, 0);
+
+  lookTarget = new THREE.Object3D();
+  scene.add(lookTarget);
+  if (vrm.lookAt) vrm.lookAt.target = lookTarget;
+
+  // let spring bones (hair, clothes) settle before frame 0
+  for (let i = 0; i < 90; i++) vrm.update(1 / 30);
+  return { headY: head.y };
+};
+
+window.loadTimeline = (t) => { tl = t; };
+
+window.renderAt = (i, mime) => {
+  const H = vrm.humanoid, E = vrm.expressionManager;
+  const p = tl.head.pitch[i], y = tl.head.yaw[i], r = tl.head.roll[i];
+  H.getNormalizedBoneNode("neck").rotation.set(p * 0.4, y * 0.4, r * 0.4);
+  H.getNormalizedBoneNode("head").rotation.set(p * 0.6, y * 0.6, r * 0.6);
+  H.getNormalizedBoneNode("spine").rotation.x = tl.spine[i];
+  H.getNormalizedBoneNode("chest").rotation.x = tl.spine[i] * 0.5;
+
+  for (const v of ["aa", "ih", "ou", "ee", "oh"]) E.setValue(v, tl.visemes[v][i]);
+  for (const [k, arr] of Object.entries(tl.face)) E.setValue(k, arr[i]);
+  E.setValue("blink", tl.blink[i]);
+
+  lookTarget.position.copy(camera.position);
+  lookTarget.position.x += tl.lookX[i];
+
+  vrm.update(1 / tl.fps);
+  renderer.render(scene, camera);
+  return renderer.domElement.toDataURL(mime || (alpha ? "image/png" : "image/jpeg"), 0.92);
+};
+
+window.stageReady = true;
+</script>
+</body>
+</html>
