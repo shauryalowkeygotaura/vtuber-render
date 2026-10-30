@@ -59,3 +59,30 @@ def test_sfx_query_is_whitelisted():
     for bad in ("pop;rm", "../x", "Pop", "a  b"):
         with pytest.raises(ValueError):
             sfx._safe_query(bad)
+
+
+def test_captions_break_on_sentences_and_pauses():
+    import talk
+    words = [("Rewrote", 0.0, 0.4), ("nothing.", 0.4, 0.9), ("Checked", 1.0, 1.4),
+             ("every", 1.4, 1.6), ("deploy.", 1.6, 2.0), ("All", 2.6, 2.8), ("green.", 2.8, 3.1)]
+    caps = [c[0] for c in talk.caption_chunks(words)]
+    assert caps == ["Rewrote nothing.", "Checked every", "deploy.", "All green."]
+
+
+def test_photo_rig_moves_only_the_lower_face():
+    import numpy as np
+    from vtuber import photo2d
+    pts = np.zeros((478, 2), np.float32) + (100, 100)
+    pts[photo2d.FOREHEAD] = (100, 40); pts[photo2d.CHIN] = (100, 160)
+    pts[photo2d.CORNER_L] = (85, 120); pts[photo2d.CORNER_R] = (115, 120)
+    pts[13] = pts[14] = (100, 120)
+    for i, x in zip(photo2d.EYE_L, (70, 90, 80, 80)): pts[i] = (x, 85)
+    for i, x in zip(photo2d.EYE_R, (130, 110, 120, 120)): pts[i] = (x, 85)
+    img = (np.random.default_rng(0).random((220, 200, 3)) * 255).astype(np.uint8)
+    face = photo2d.Face(pts, np.array([0, -1.0]), np.array([1.0, 0]), pts[13].copy(), 15.0, 40.0,
+                        np.array([100, 100.0]), 120.0)
+    rig = photo2d.Rig(img, face)
+    shut = rig.frame(0, 0, "neutral", 0, 0)
+    talking = rig.frame(1, 0, "neutral", 0, 0)
+    assert np.array_equal(shut[:60], img[:60])            # above the face: untouched
+    assert not np.array_equal(talking[118:150, 85:115], shut[118:150, 85:115])  # mouth opened

@@ -27,6 +27,20 @@ Every run writes `output/<name>.beats.json`, so you can see what the director ch
 no credit needed, per its embedded VRM meta). It is a placeholder. To make it *you*:
 build a character in **VRoid Studio** (free), export VRM 1.0, pass `--avatar`.
 
+## 2D mode: a photo that talks (`talk.py`)
+One photo with a visible face in, talking reel out. No 3D model, no drawing.
+
+```bash
+doppler run -p philosopher-pipeline -c dev -- python talk.py --photo me.jpg --script scripts/dashboard-not-broken.txt
+doppler run -p philosopher-pipeline -c dev -- python talk.py --photo me.jpg --audio take.m4a   # your own voice
+```
+- `vtuber/photo2d.py`: MediaPipe face landmarks (model in `assets/models/`, gitignored), then per frame a jaw-drop warp + painted mouth interior (ee/ih widen, oh/ou pinch), painted blinks, smile/frown corners and brow lift per emotion.
+- 10 emotions (neutral, happy, excited, sad, angry, surprised, thinking, smug, relaxed, nervous), picked per sentence by `performance.direct(..., expressions=photo2d.EMOTIONS)`. Shown as face warps, a subtle colour grade, and comic marks (sparkles, !, ?, sweat, anger).
+- Camera: mid shot on the face, punch-in on strong lines, handheld drift from `motion.py`. Word-timed captions (JetBrains Mono, OFL).
+- Voice: `--tts edge` (default, free, `en-IN-PrabhatNeural`) or `--tts orpheus` (needs Orpheus terms accepted on the Groq org). A cloned voice will slot in as a third engine.
+- ~35 s reel renders in ~2-3 min on CPU.
+- `vtuber/sprites2d.py` is an alternative cartoon sprite pack (10 emotions x 4 mouths x blink) for a PNGtuber look; not wired into a renderer yet.
+
 ## Notes
 - Rhubarb Lip Sync was considered and dropped: English-only recogniser, and running
   its downloaded binary was blocked here.

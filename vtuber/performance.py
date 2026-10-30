@@ -20,17 +20,22 @@ from . import groq_pool
 EXPRESSIONS = ("neutral", "happy", "sad", "angry", "surprised", "relaxed")
 GESTURES = ("none", "nod", "shake", "tilt", "lean_in", "look_away")
 
-SYSTEM = (
-    "You direct a VTuber avatar. For each numbered transcript segment pick the "
-    "facial expression and one head gesture that a lively, confident 17-year-old "
-    "creator would naturally make while saying it. Mostly neutral or happy; save "
-    "surprised/angry/sad for lines that clearly carry them. Gestures: nod = "
-    "agreeing or landing a point, shake = denying or 'no', tilt = questions or "
-    "irony, lean_in = secrets, stakes, 'listen', look_away = thinking or recalling. "
-    f"expression in {list(EXPRESSIONS)}, gesture in {list(GESTURES)}, intensity "
-    "0.2-1.0. Reply JSON only: {\"beats\":[{\"i\":0,\"expression\":\"happy\","
-    "\"intensity\":0.6,\"gesture\":\"nod\"}]}"
-)
+def _system(expressions: tuple[str, ...]) -> str:
+    return (
+        "You direct a VTuber avatar. For each numbered transcript segment pick the "
+        "facial expression and one head gesture that a lively, confident 17-year-old "
+        "creator would naturally make while saying it. Mostly neutral or happy; save "
+        "the strong expressions for lines that clearly carry them, and vary them so "
+        "the face never sits on one look for long. Gestures: nod = "
+        "agreeing or landing a point, shake = denying or 'no', tilt = questions or "
+        "irony, lean_in = secrets, stakes, 'listen', look_away = thinking or recalling. "
+        f"expression in {list(expressions)}, gesture in {list(GESTURES)}, intensity "
+        "0.2-1.0. Reply JSON only: {\"beats\":[{\"i\":0,\"expression\":\"happy\","
+        "\"intensity\":0.6,\"gesture\":\"nod\"}]}"
+    )
+
+
+SYSTEM = _system(EXPRESSIONS)
 
 
 def transcribe(path: str) -> list[dict]:
@@ -68,11 +73,11 @@ def _sentences(start: float, end: float, text: str) -> list[dict]:
     return out
 
 
-def _label_chunk(chunk: list[dict], offset: int) -> list[dict]:
+def _label_chunk(chunk: list[dict], offset: int, expressions: tuple[str, ...] = EXPRESSIONS) -> list[dict]:
     lines = "\n".join(f"{offset + i}: {s['text']}" for i, s in enumerate(chunk))
     resp = groq_pool.chat(
         groq_pool.FAST,
-        messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": lines}],
+        messages=[{"role": "system", "content": _system(expressions)}, {"role": "user", "content": lines}],
         max_tokens=min(900, 60 + 40 * len(chunk)),
         response_format={"type": "json_object"},
         require_content=True,
@@ -82,8 +87,8 @@ def _label_chunk(chunk: list[dict], offset: int) -> list[dict]:
     return beats if isinstance(beats, list) else []
 
 
-def _clean(beat: dict, seg: dict) -> dict:
-    expr = beat.get("expression") if beat.get("expression") in EXPRESSIONS else "neutral"
+def _clean(beat: dict, seg: dict, expressions: tuple[str, ...] = EXPRESSIONS) -> dict:
+    expr = beat.get("expression") if beat.get("expression") in expressions else "neutral"
     gest = beat.get("gesture") if beat.get("gesture") in GESTURES else "none"
     try:
         inten = float(beat.get("intensity", 0.5))
@@ -92,7 +97,7 @@ def _clean(beat: dict, seg: dict) -> dict:
     return {**seg, "expression": expr, "gesture": gest, "intensity": max(0.0, min(1.0, inten))}
 
 
-def direct(path: str, use_llm: bool = True) -> list[dict]:
+def direct(path: str, use_llm: bool = True, expressions: tuple[str, ...] = EXPRESSIONS) -> list[dict]:
     """Timed beats: [{start, end, text, expression, intensity, gesture}]."""
     try:
         segs = transcribe(path) if use_llm else []
@@ -102,9 +107,9 @@ def direct(path: str, use_llm: bool = True) -> list[dict]:
     beats: dict[int, dict] = {}
     for off in range(0, len(segs), 20):
         try:
-            for b in _label_chunk(segs[off:off + 20], off):
+            for b in _label_chunk(segs[off:off + 20], off, expressions):
                 if isinstance(b, dict) and isinstance(b.get("i"), int):
                     beats[b["i"]] = b
         except Exception as exc:  # noqa: BLE001
             print(f"  direction failed for segments {off}+ ({str(exc)[:120]}); neutral", file=sys.stderr)
-    return [_clean(beats.get(i, {}), s) for i, s in enumerate(segs)]
+    return [_clean(beats.get(i, {}), s, expressions) for i, s in enumerate(segs)]

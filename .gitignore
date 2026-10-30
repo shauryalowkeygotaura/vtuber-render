@@ -6,3 +6,6 @@ samples/*.m4a
 samples/*.mp3
 .frames/
 tools/
+
+# face model (3.7 MB, re-download per photo2d.MODEL error message)
+assets/models/
