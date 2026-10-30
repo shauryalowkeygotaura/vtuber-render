@@ -25,6 +25,7 @@ from pathlib import Path
 CACHE = Path(__file__).resolve().parent.parent / "assets" / "broll"
 W, H = 1080, 1920
 API = "https://api.pexels.com/videos/search"
+STOP = {"the", "and", "with", "for", "screen", "video", "background", "on", "of"}
 
 
 def _key() -> str:
@@ -79,6 +80,15 @@ def search(term: str, min_seconds: float, used: set[str] | None = None, pages: i
                             "duration": float(v["duration"]), "page": v.get("url", "")})
         if len(out) >= 6 or not data.get("next_page"):
             break
+    # Pexels search is loose ("github pages homepage" returned a girl on a phone): rank by how many
+    # query words appear in the clip's title slug, and drop clips that match none when others do
+    words = {w for w in term.lower().split() if len(w) > 2} - STOP
+    for c in out:
+        slug = c["page"].lower()
+        c["score"] = sum(w.rstrip("s") in slug for w in words)
+    out.sort(key=lambda c: -c["score"])
+    if out and out[0]["score"] > 0:
+        out = [c for c in out if c["score"] > 0]
     return out
 
 

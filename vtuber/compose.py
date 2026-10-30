@@ -69,6 +69,24 @@ class BrollReader:
         return self.last
 
 
+FONT = Path(__file__).resolve().parent.parent / "assets" / "fonts" / "JetBrainsMono-ExtraBold.ttf"
+_fonts: dict = {}
+
+
+def _caption(frame: np.ndarray, text: str, pop: float) -> np.ndarray:
+    """Word-chunk caption, cream on a heavy outline, popping in."""
+    from PIL import Image, ImageDraw, ImageFont  # noqa: PLC0415
+    size = int(84 * pop)
+    if size not in _fonts:
+        _fonts[size] = ImageFont.truetype(str(FONT), max(8, size))
+    y0 = int(H * 0.66)
+    band = Image.fromarray(cv2.cvtColor(frame[y0:y0 + 260], cv2.COLOR_BGR2RGB))
+    ImageDraw.Draw(band).text((W / 2, 130), text.upper(), font=_fonts[size], fill=(240, 228, 204),
+                              stroke_width=10, stroke_fill=(16, 12, 14), anchor="mm")
+    frame[y0:y0 + 260] = cv2.cvtColor(np.asarray(band), cv2.COLOR_RGB2BGR)
+    return frame
+
+
 RIM = (236, 246, 255)   # BGR, cool white
 
 
@@ -114,13 +132,14 @@ def render(edit: dict, out: Path, puppet: Puppet | None = None, use_broll: bool 
     cmd += ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p",
             "-movflags", "+faststart", "-t", f"{n / FPS:.3f}", str(out)]
     ff = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    caps = edit.get("captions") or []
     bi = 0
     for i in range(n):
         t = i / FPS
         while bi < len(beats) - 1 and t >= beats[bi]["end"]:
             bi += 1
         b = beats[bi]
-        u = t - b["start"]
+        u = max(0.0, t - b["start"])
         rng = np.random.default_rng(seed * 1000 + bi)
 
         canvas = np.zeros((H, W, 4), np.float32)
@@ -135,9 +154,10 @@ def render(edit: dict, out: Path, puppet: Puppet | None = None, use_broll: bool 
             _m(-FEET[0], -FEET[1])
         pose = moves.arms(b["arms"], u)
         pose["head"] = pose.get("head", 0) + 4 * math.sin(t * 2.3)
-        talk = b.get("talk")
-        mouth = float(talk[min(len(talk) - 1, int(u * FPS))]) if talk else 0.0
-        face = {"emotion": b["emotion"], "t": t, "open_": mouth,
+        mtrack, wtrack = edit.get("mouth") or [], edit.get("widen") or []
+        mouth = float(mtrack[i]) * 1.1 if i < len(mtrack) else 0.0
+        widen = float(wtrack[i]) if i < len(wtrack) else 0.0
+        face = {"emotion": b["emotion"], "t": t, "open_": min(1.0, mouth), "widen": widen,
                 "blink": 1.0 if (t % 3.1) < 0.09 else 0.0}
         layer = p.render(pose, root, (W, H), face)
         _rim(canvas, layer)
@@ -148,7 +168,11 @@ def render(edit: dict, out: Path, puppet: Puppet | None = None, use_broll: bool 
             M[0, 2] += cdx
             M[1, 2] += cdy
             canvas = cv2.warpAffine(canvas, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
-        ff.stdin.write(canvas[..., :3].clip(0, 255).astype(np.uint8).tobytes())
+        frame = canvas[..., :3].clip(0, 255).astype(np.uint8)
+        cap = next((c for c in caps if c["start"] - 0.02 <= t <= c["end"] + 0.12), None)
+        if cap:
+            frame = _caption(frame, cap["text"], min(1.0, (t - cap["start"]) * 8 + 0.6))
+        ff.stdin.write(frame.tobytes())
         if i and i % (FPS * 2) == 0:
             print(f"  {i}/{n}", flush=True)
     ff.stdin.close()
