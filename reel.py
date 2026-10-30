@@ -3,7 +3,7 @@
     doppler run -p creative-studio -c dev -- doppler run -p philosopher-pipeline -c dev -- \
         python reel.py --script scripts/dashboard-not-broken.txt
 
-  1. voice      Edge TTS (free) with word timings; --audio uses a real take instead
+  1. voice      Groq Orpheus (default, --voice troy) or --tts edge; --audio uses a real take instead
   2. beats      performance.direct: Whisper + Groq emotion per sentence
   3. director   Groq picks spot / entrance / camera / arms / emotion / b-roll per shot
   4. edit.json  written to edits/<name>.json: edit any line by hand and re-run with --edit
@@ -43,7 +43,10 @@ def main() -> int:
     src.add_argument("--script", help="text or a .txt path")
     src.add_argument("--audio", help="a real voice take")
     src.add_argument("--edit", help="re-render an existing edits/*.json")
-    ap.add_argument("--voice", default="en-IN-PrabhatNeural")
+    ap.add_argument("--tts", choices=("orpheus", "edge"), default="orpheus",
+                    help="orpheus = Groq Orpheus (default, expressive); edge = free Microsoft voice")
+    ap.add_argument("--voice", help="orpheus: troy (default), austin, daniel...; edge: en-IN-PrabhatNeural")
+    ap.add_argument("--workers", type=int, help="parallel render processes (default 4)")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--no-broll", action="store_true")
@@ -62,8 +65,12 @@ def main() -> int:
         words = []
         if a.script:
             text = Path(a.script).read_text(encoding="utf-8") if Path(a.script).is_file() else a.script
-            audio = ROOT / "output" / f"{name}.voice.mp3"
-            words = talk.synth_edge(text, a.voice, audio)
+            if a.tts == "orpheus":
+                audio = ROOT / "output" / f"{name}.voice.wav"
+                words = talk.synth_script(text, a.voice or "troy", audio)
+            else:
+                audio = ROOT / "output" / f"{name}.voice.mp3"
+                words = talk.synth_edge(text, a.voice or "en-IN-PrabhatNeural", audio)
         else:
             audio = Path(a.audio)
         beats = performance.direct(str(audio), use_llm=not a.no_llm, expressions=tuple(Rig.LOOKS))
@@ -80,7 +87,7 @@ def main() -> int:
         # beats first and readable; the long per-frame tracks last
         edit_path.write_text(json.dumps(edit, indent=1, ensure_ascii=False), encoding="utf-8")
         print(f"  plan -> {edit_path} ({len(shots)} shots)")
-    out = compose.render(edit, ROOT / "output" / f"{name}.mp4", use_broll=not a.no_broll)
+    out = compose.render(edit, ROOT / "output" / f"{name}.mp4", use_broll=not a.no_broll, workers=a.workers)
     print(f"  video -> {out}")
     return 0
 
