@@ -21,7 +21,7 @@ INK = (24, 16, 18, 255)
 INSIDE = (70, 22, 28, 255)
 TONGUE = (196, 96, 98, 255)
 TEETH = (250, 248, 244, 255)
-SS = 4
+SS = 3  # supersample for face lines (4 cost 180 ms/frame for no visible gain at reel size)
 
 
 def key_green(img_bgr: np.ndarray, tol: float = 42) -> np.ndarray:

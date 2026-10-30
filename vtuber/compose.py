@@ -98,10 +98,13 @@ def _rim(canvas: np.ndarray, layer: np.ndarray, px: int = 7):
         return
     y0, y1 = max(0, ys.min() - 40), min(H, ys.max() + 41)
     x0, x1 = max(0, xs.min() - 40), min(W, xs.max() + 41)
-    sub = a[y0:y1, x0:x1]
+    sub = a[y0:y1, x0:x1].astype(np.uint8)   # uint8 morphology is ~10x faster than float32
+    # edge at full res (it must be crisp); the soft glow at 1/4 res and scaled back up (was 700 ms/frame)
     edge = cv2.dilate(sub, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * px + 1, 2 * px + 1)))
-    glow = cv2.GaussianBlur(edge, (0, 0), 14) * 0.55
-    rim = np.maximum(edge, glow)[..., None] / 255.0
+    h, w = edge.shape
+    small = cv2.resize(edge, (max(1, w // 4), max(1, h // 4)), interpolation=cv2.INTER_AREA)
+    glow = cv2.resize(cv2.GaussianBlur(small, (0, 0), 3.5), (w, h), interpolation=cv2.INTER_LINEAR) * 0.55
+    rim = np.maximum(edge.astype(np.float32), glow)[..., None] * (1 / 255.0)
     roi = canvas[y0:y1, x0:x1]
     roi[..., :3] = np.asarray(RIM, np.float32) * rim + roi[..., :3] * (1 - rim)
     la = layer[y0:y1, x0:x1, 3:4] / 255.0
