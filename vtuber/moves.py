@@ -115,8 +115,9 @@ def arms(kind: str, u: float) -> dict:
         return {"A_shoulder": 90 * k, "B_shoulder": 90 * k, "A_elbow": spin, "B_elbow": spin + 180,
                 "A_hand_kind": "fist", "B_hand_kind": "fist"}
     if kind == "flex":
+        pump = back(max(0.0, u - 0.2) / 0.3) * (0.85 + 0.15 * math.sin(u * 9))  # biceps swell after the arms land
         return {"A_shoulder": 90 * k, "B_shoulder": 90 * k, "A_elbow": 125 * k, "B_elbow": 125 * k,
-                "A_hand_kind": "fist", "B_hand_kind": "fist"}
+                "A_bulge": pump, "B_bulge": pump, "A_hand_kind": "fist", "B_hand_kind": "fist"}
     if kind == "point_left":
         return {"A_shoulder": 75 * k, "A_elbow": 8 * k, "A_hand_kind": "point"}
     if kind == "point_right":

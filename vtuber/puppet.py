@@ -41,6 +41,20 @@ def _rot(pivot, deg):
     return np.vstack([m, [0, 0, 1]])
 
 
+def _widen(a, b, f: float) -> np.ndarray:
+    """3x3 scale by f perpendicular to the line a->b (1 = no change)."""
+    if abs(f - 1) < 1e-3:
+        return np.eye(3)
+    d = np.subtract(b, a).astype(np.float64)
+    d /= np.linalg.norm(d)
+    n = np.array([-d[1], d[0]])
+    L = np.eye(2) + (f - 1) * np.outer(n, n)
+    M = np.eye(3)
+    M[:2, :2] = L
+    M[:2, 2] = np.asarray(a, np.float64) - L @ np.asarray(a, np.float64)
+    return M
+
+
 @dataclass
 class Puppet:
     rig: Rig
@@ -153,7 +167,10 @@ class Puppet:
             up = _rot(S["shoulder"], sign * g(f"{s}_shoulder"))
             fo = up @ _rot(S["elbow"], sign * g(f"{s}_elbow"))
             ha = fo @ _rot(S["wrist"], sign * g(f"{s}_wrist"))
-            T[f"{s}_upper"], T[f"{s}_fore"], T[f"{s}_hand"] = up, fo, ha
+            # bicep bulge: widen the upper arm across its own bone (points on the bone stay put,
+            # so shoulder and elbow don't move); only the upper piece gets it, not the chain
+            T[f"{s}_upper"] = up @ _widen(S["shoulder"], S["elbow"], 1 + 0.5 * g(f"{s}_bulge"))
+            T[f"{s}_fore"], T[f"{s}_hand"] = fo, ha
         return T
 
     def render(self, pose: dict, root: np.ndarray, size: tuple[int, int], face: dict | None = None,
