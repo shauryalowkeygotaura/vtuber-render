@@ -1,0 +1,10 @@
+{
+  "seed": 7,
+  "audio": null,
+  "beats": [
+    {"start": 0.0, "end": 2.2, "emotion": "happy",    "spot": "center_big",   "enter": "drop_from_sky",  "camera": "shake_heavy", "arms": "wave",        "broll": "neon city night"},
+    {"start": 2.2, "end": 4.4, "emotion": "excited",  "spot": "corner_right", "enter": "pop_in_right",   "camera": "none",        "arms": "fan_spin",    "broll": "concert lights crowd"},
+    {"start": 4.4, "end": 6.2, "emotion": "smug",     "spot": "half_left",    "enter": "slide_in_left",  "camera": "zoom_punch",  "arms": "point_right", "broll": "server room"},
+    {"start": 6.2, "end": 8.0, "emotion": "angry",    "spot": "center",       "enter": "spin_in",        "camera": "shake_light", "arms": "flex",        "broll": "rain window night"}
+  ]
+}
