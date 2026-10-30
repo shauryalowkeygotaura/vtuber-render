@@ -1,0 +1,9 @@
+{
+  "_note": "joint pixels in rig-base.png (768x1376). A = viewer-left arm (his right), B = viewer-right arm. elbow = bottom-centre of the rolled cuff, so the cuff stays on the upper arm.",
+  "neck": [390, 300],
+  "torso": [[390, 330], [390, 760]],
+  "legs": [[390, 760], [390, 1330]],
+  "A": {"shoulder": [247, 385], "elbow": [214, 615], "wrist": [224, 748], "tip": [226, 862]},
+  "B": {"shoulder": [533, 385], "elbow": [562, 615], "wrist": [551, 745], "tip": [552, 862]},
+  "radius": {"torso": 125, "legs": 95, "upper": 42, "fore": 30, "hand": 34}
+}

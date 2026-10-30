@@ -9,3 +9,6 @@ tools/
 
 # face model (3.7 MB, re-download per photo2d.MODEL error message)
 assets/models/
+
+# avatar reference panels (not needed to render)
+assets/avatar/ref/
