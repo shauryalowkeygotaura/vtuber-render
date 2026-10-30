@@ -13,3 +13,5 @@ assets/models/
 # avatar reference panels (not needed to render)
 assets/avatar/ref/
 assets/broll/
+samples/voice/*.m4a
+samples/voice/*.wav
