@@ -55,7 +55,7 @@ def synth_script(text: str, voice: str, wav_path: Path) -> list[tuple[str, float
     for i, s in enumerate(sentences, 1):
         if not orp.speakable(s):
             raise ValueError(f"Orpheus is English-only; rewrite: {s[:60]}")
-        pcm += orp.synth(s, voice=voice) + gap
+        pcm += _verified(orp, s, voice) + gap
         print(f"  voice {i}/{len(sentences)}", flush=True)
     with wave.open(str(wav_path), "wb") as w:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(orp.SR); w.writeframes(pcm)
@@ -64,6 +64,33 @@ def synth_script(text: str, voice: str, wav_path: Path) -> list[tuple[str, float
     except Exception as e:  # noqa: BLE001 - captions fall back to sentence timing
         print(f"  alignment failed ({str(e)[:100]}); captions from sentences", file=sys.stderr)
         return []
+
+
+def _norm(w: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", w.lower())
+
+
+def _verified(orp, sentence: str, voice: str, tries: int = 3) -> bytes:
+    """Orpheus sometimes garbles a line (skipped words, mumble, wrong word). Whisper the
+    take back and re-roll until at least 80% of the script's words are heard and the
+    pace is human; keep the best take if none pass."""
+    want = [_norm(w) for w in sentence.split() if _norm(w)]
+    best, best_score = b"", -1.0
+    for attempt in range(tries):
+        pcm = orp.synth(sentence, voice=voice)
+        secs = len(pcm) / 2 / orp.SR
+        try:
+            heard = {_norm(w) for w, _, _ in orp.align(pcm, "")}  # raw Whisper words, not the script
+        except Exception:  # noqa: BLE001 - can't check: accept the take
+            return pcm
+        score = sum(w in heard for w in want) / max(1, len(want))
+        pace_ok = 0.12 <= max(0.0, secs - 0.7) / max(1, len(want)) <= 0.9  # minus lead/tail silence
+        if score >= 0.8 and pace_ok:
+            return pcm
+        print(f"  voice: re-rolling '{sentence[:40]}' (heard {score:.0%}, {secs:.1f}s)", flush=True)
+        if score > best_score:
+            best, best_score = pcm, score
+    return best
 
 
 def synth_edge(text: str, voice: str, audio_path: Path) -> list[tuple[str, float, float]]:

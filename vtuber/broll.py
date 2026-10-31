@@ -99,8 +99,8 @@ def _title(c: dict) -> str:
     return " ".join(words[:-1] if words and words[-1].isdigit() else words)[:120]
 
 
-SAFE = ("dark abstract technology background", "neon light particles", "code on screen dark",
-        "blurred city lights night", "abstract gradient motion")
+SAFE = ("abstract particles dark background", "code on screen dark", "abstract gradient motion",
+        "bokeh lights abstract", "digital data abstract")
 
 
 def rng_safe(term: str) -> str:
@@ -118,9 +118,11 @@ def judge(line: str, term: str, cands: list[dict]) -> tuple[int | None, str]:
         menu = "\n".join(f"{i}: {_title(c)}" for i, c in enumerate(cands[:10]))
         resp = groq_pool.chat(groq_pool.FAST, messages=[
             {"role": "system", "content":
-                "You pick background stock footage for one line of a vertical reel. The clip must show the "
-                "line's idea literally or as an obvious visual metaphor; a clip that only shares a word "
-                "(a jungle pipeline for a 'deployment pipeline') is WRONG. Reply JSON "
+                "You pick background stock footage for one line of a vertical reel about tech/building. Accept "
+                "a clip if it shows the line's idea OR a related scene a viewer would connect (a laptop with "
+                "code for a debugging line is fine). Reject clips that only share a word (a jungle pipeline "
+                "for 'deployment pipeline', animals following each other for 'follow'), and anything gross "
+                "or off-tone. Reply JSON "
                 '{"pick": <index or -1>, "alt": "<2-4 word concrete search query to try if -1>"}'},
             {"role": "user", "content": f"Line: {line}\nSearch: {term}\nClips:\n{menu}"}],
             max_tokens=120, response_format={"type": "json_object"}, require_content=True)
@@ -149,7 +151,8 @@ def fetch(term: str, seconds: float, used: set[str], line: str = "") -> Path | N
         # nothing on-topic exists: a neutral moving background beats a wrong one (CN Tower for "no internet")
         print(f"  broll: nothing fits '{term}', using a neutral background", file=sys.stderr)
         term = rng_safe(term)
-        cands = search(term, seconds, used)
+        people = ("woman", "man", "person", "people", "girl", "boy", "dancing", "couple", "hand")
+        cands = [c for c in search(term, seconds, used) if not any(w in _title(c).split() for w in people)]
         pick = 0
     if pick:
         cands = [cands[pick]] + cands[:pick] + cands[pick + 1:]
