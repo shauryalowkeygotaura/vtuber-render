@@ -146,21 +146,31 @@ class Puppet:
             self.cut_ink[k] = cv2.dilate(inner.astype(np.uint8), np.ones((2, 2), np.uint8)).astype(bool)
 
     # ── posing ──────────────────────────────────────────────────────────────
-    def _mech(self, out, M, side, kind):
-        """Draw a mechanical hand in place of the drawn one, riding the wrist transform."""
-        from vtuber.mechhand import hand  # noqa: PLC0415
+    def _mech(self, out, M, side, kind, scale: float = 1.0, launch: float = 0.0, phase: int = 0):
+        """Draw a mechanical hand / tool in place of the drawn one, riding the wrist transform.
+        scale pops it in on a swap; launch pushes it out along the forearm (rocket fist)."""
+        from vtuber.mechhand import TOOLS, hand  # noqa: PLC0415
         S = self.j[side]
         L = float(np.linalg.norm(np.subtract(S["tip"], S["wrist"]))) * 1.15
-        key = (side, kind)
+        phase = phase % 4 if kind in TOOLS else 0
+        key = (side, kind, phase)
         cache = self.__dict__.setdefault("_mech_cache", {})
         if key not in cache:
-            im, wr = hand(kind, L, mirror=(side == "A"))
+            im, wr = hand(kind, L, mirror=(side == "A"), phase=phase)
             a = np.asarray(im).astype(np.float32)[..., [2, 1, 0, 3]]
             a[..., :3] *= a[..., 3:4] * (1 / 255.0)   # premultiplied, like every sprite _blit takes
             cache[key] = (a, wr)
         spr, wr = cache[key]
-        # sprite px -> art px: put the sprite's wrist on the drawing's wrist
-        to_art = np.array([[1, 0, S["wrist"][0] - wr[0]], [0, 1, S["wrist"][1] - wr[1]], [0, 0, 1]], np.float32)
+        if scale <= 0.02:
+            return
+        if kind in TOOLS:
+            scale *= 1.9   # tools are props: big enough to read at phone size
+        wx, wy = S["wrist"]
+        d = np.subtract(S["tip"], S["wrist"]).astype(np.float64)
+        d /= np.linalg.norm(d)
+        # sprite px -> art px: wrist on the drawing's wrist, scaled about it, pushed along the hand
+        to_art = np.array([[scale, 0, wx - wr[0] * scale + d[0] * launch],
+                           [0, scale, wy - wr[1] * scale + d[1] * launch], [0, 0, 1]], np.float32)
         M3 = np.vstack([M, [0, 0, 1]]) @ to_art
         _blit(out, spr, M3[:2])
 
@@ -211,7 +221,9 @@ class Puppet:
             M = (root @ T[k])[:2]
             kind = pose.get(f"{k[0]}_hand_kind") if k.endswith("_hand") else None
             if kind and kind != "real":
-                self._mech(out, M, k[0], kind)
+                sd = k[0]
+                self._mech(out, M, sd, kind, float(pose.get(f"{sd}_hand_scale", 1.0)),
+                           float(pose.get(f"{sd}_hand_launch", 0.0)), int(pose.get(f"{sd}_hand_phase", 0)))
                 continue
             if k in self.caps:  # joint ball first, under the piece, with a soft shadow rim
                 c, r, col = self.caps[k]

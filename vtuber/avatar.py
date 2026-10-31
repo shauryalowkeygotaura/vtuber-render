@@ -310,8 +310,8 @@ class Rig:
                     d.line([Q(p1), Q(p0), Q(p2)], fill=(225, 40, 50, 255), width=int(5 * k), joint="curve")
             elif mk == "shock":   # vertical lines on the forehead
                 for j in range(-3, 4):
-                    a = f.centre + up * s * 0.32 + right * j * s * 0.07
-                    d.line([Q(a), Q(a - up * s * (0.14 + 0.04 * (j % 2)))], fill=(60, 70, 140, 200), width=int(3 * k))
+                    a = f.centre + up * s * 0.52 + right * j * s * 0.07
+                    d.line([Q(a), Q(a - up * s * (0.12 + 0.03 * (j % 2)))], fill=(60, 70, 140, 200), width=int(3 * k))
             elif mk == "gloom":   # dark hatching over the upper face
                 for j in range(-6, 7):
                     a = f.centre + up * s * 0.32 + right * j * s * 0.04

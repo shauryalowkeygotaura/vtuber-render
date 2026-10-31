@@ -1,0 +1,5 @@
+{"seed": 3, "audio": null, "beats": [
+ {"start": 0.0, "end": 2.0, "text": "I spent three nights fixing this.", "emotion": "angry", "spot": "center_big", "enter": "drop_from_sky", "camera": "shake_light", "arms": "idle", "hand": "drill", "broll": "laptop code night"},
+ {"start": 2.0, "end": 4.0, "text": "Listen up.", "emotion": "excited", "spot": "center", "enter": "pop_in_left", "camera": "zoom_punch", "arms": "idle", "hand": "megaphone", "broll": "concert crowd lights"},
+ {"start": 4.0, "end": 6.2, "text": "Then it blew up overnight.", "emotion": "excited", "spot": "corner_left", "enter": "slide_in_left", "camera": "shake_heavy", "arms": "idle", "hand": "rocket", "broll": "rocket launch"}
+]}

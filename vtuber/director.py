@@ -14,6 +14,7 @@ import random
 import sys
 
 from vtuber import groq_pool, moves
+from vtuber.mechhand import TOOLS
 from vtuber.avatar import Rig
 
 MAX_SHOT = 3.2   # seconds; longer beats are cut into two shots so the frame keeps moving
@@ -25,12 +26,14 @@ and black tie, with robot hands). For EACH numbered line, choose:
 - camera: one of {list(moves.CAMERAS)}
 - arms: one of {list(moves.ARMS)}
 - emotion: one of {list(Rig.LOOKS)}
+- hand: "none" or a robot-hand tool that swaps in, ONLY when the line clearly earns it:
+  {"; ".join(f"{k} = {v}" for k, v in TOOLS.items())}. Use it on at most a third of the lines.
 - broll: 2-4 word stock-footage search for a VERTICAL background clip that shows the line's idea literally
   (concrete, filmable things: "laptop code screen", "delhi traffic night", not abstractions)
 Rules: the first line is the hook, make it loud (drop_from_sky or spin_in, zoom_punch or shake_heavy).
 Match arms to meaning (pointing at the viewer for "you", shrug for doubt, flex for wins, fan_spin for hype,
 thumbs_up for approval, wave for hello/bye). Vary everything: never repeat an entrance or spot back to back.
-Reply JSON: {{"shots": [{{"i": 0, "spot": ..., "enter": ..., "camera": ..., "arms": ..., "emotion": ..., "broll": ...}}]}}"""
+Reply JSON: {{"shots": [{{"i": 0, "spot": ..., "enter": ..., "camera": ..., "arms": ..., "emotion": ..., "hand": ..., "broll": ...}}]}}"""
 
 
 def _split(beats: list[dict]) -> list[dict]:
@@ -90,6 +93,12 @@ def direct(beats: list[dict], seed: int = 7, use_llm: bool = True) -> list[dict]
         b["enter"] = g.get("enter") if g.get("enter") in moves.ENTRANCES else rng.choice(moves.ENTRANCES[:-1])
         b["camera"] = g.get("camera") if g.get("camera") in moves.CAMERAS else rng.choice(moves.CAMERAS)
         b["arms"] = g.get("arms") if g.get("arms") in moves.ARMS else rng.choice(moves.ARMS)
+        b["hand"] = g.get("hand") if g.get("hand") in TOOLS else "none"
+        # a swap only lands if it's rare: never two shots in a row, never the same tool within ~5 s
+        if b["hand"] != "none" and prev and (prev.get("hand") != "none" or
+                                             any(o.get("hand") == b["hand"] and s["start"] - o["start"] < 5
+                                                 for o in out)):
+            b["hand"] = "none"
         b["broll"] = _safe_term(g.get("broll")) or (prev.get("broll") if s.get("cont") else "") or "city night lights"
         # ── rules layer ─────────────────────────────────────────────────────
         if i == 0:   # hook: loud entrance, hard camera

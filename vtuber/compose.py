@@ -24,6 +24,7 @@ import cv2
 import numpy as np
 
 from vtuber import broll, moves
+from vtuber.mechhand import TOOLS
 from vtuber.avatar import Rig
 from vtuber.puppet import Puppet
 
@@ -48,6 +49,9 @@ def clean(beat: dict) -> dict:
     b["camera"] = b.get("camera") if b.get("camera") in moves.CAMERAS else "none"
     b["arms"] = b.get("arms") if b.get("arms") in moves.ARMS else "idle"
     b["emotion"] = b.get("emotion") if b.get("emotion") in EMOTIONS else "neutral"
+    b["hand"] = b.get("hand") if b.get("hand") in TOOLS else "none"
+    if b["hand"] != "none" and b["spot"] in ("center_big", "half_left", "half_right"):
+        b["spot"] = "center"   # a tool at the end of a raised arm is off-frame in close-ups
     return b
 
 
@@ -119,6 +123,25 @@ def _rim(canvas: np.ndarray, layer: np.ndarray, px: int = 7):
     roi[..., :3] = rgb
 
 
+def _puff(canvas: np.ndarray, p: Puppet, pose: dict, root: np.ndarray, side: str, u: float):
+    """Cartoon smoke puff at the wrist while a tool snaps on."""
+    T = p.transforms(pose)[f"{side}_hand"]
+    w = p.j[side]["wrist"]
+    c = (root @ T) @ np.array([w[0], w[1], 1.0])
+    k = u / 0.4
+    s = math.sqrt(abs(np.linalg.det(root[:2, :2])))
+    alpha = (1 - k) ** 1.5
+    for j in range(7):
+        ang = j * 2 * math.pi / 7 + 0.4
+        r = (18 + 70 * k) * s * (0.8 + 0.4 * ((j * 37) % 5) / 5)
+        cx, cy = int(c[0] + math.cos(ang) * r), int(c[1] + math.sin(ang) * r)
+        rad = max(2, int((26 - 10 * k) * s))
+        layer = canvas[..., :3].copy()
+        cv2.circle(layer, (cx, cy), rad, (245, 245, 250), -1, cv2.LINE_AA)
+        cv2.circle(layer, (cx, cy), rad, (40, 36, 44), max(1, int(2 * s)), cv2.LINE_AA)
+        canvas[..., :3] = canvas[..., :3] * (1 - alpha) + layer * alpha
+
+
 RIG = Path(__file__).resolve().parent.parent / "assets/avatar/rig-base.png"
 _P: Puppet | None = None
 
@@ -160,12 +183,26 @@ def _frames(edit: dict, beats: list[dict], clips: list, i0: int, i1: int, out: P
             _m(-FEET[0], -FEET[1])
         pose = moves.arms(b["arms"], u)
         pose["head"] = pose.get("head", 0) + 4 * math.sin(t * 2.3)
+        side = None
+        if b["hand"] != "none":   # tool swap: pops onto the free arm with a smoke puff
+            side = "A" if b["arms"] == "point_left" else "B"
+            if b["arms"] in ("idle", "shrug") and b["hand"] != "rocket":
+                pose.update({f"{side}_shoulder": 70 * moves.back(u / 0.35), f"{side}_elbow": 100 * moves.back(u / 0.35)})
+            if b["hand"] == "rocket":   # fist fires off along the arm and flies back
+                pose.update({f"{side}_shoulder": 90 * moves.back(u / 0.3), f"{side}_elbow": 0})
+                out_k = moves.smooth((u - 0.45) / 0.35) - moves.smooth((u - 1.3) / 0.5)
+                pose[f"{side}_hand_launch"] = 950 * out_k
+            pose[f"{side}_hand_kind"] = b["hand"]
+            pose[f"{side}_hand_scale"] = moves.back(u / 0.28, 2.2)
+            pose[f"{side}_hand_phase"] = int(t * 15)
         mouth = float(mtrack[i]) * 1.1 if i < len(mtrack) else 0.0
         widen = float(wtrack[i]) if i < len(wtrack) else 0.0
         face = {"emotion": b["emotion"], "t": t, "open_": min(1.0, mouth), "widen": widen,
                 "blink": 1.0 if (t % 3.1) < 0.09 else 0.0}
         layer = p.render(pose, root, (W, H), face)
         _rim(canvas, layer)
+        if side and u < 0.4:
+            _puff(canvas, p, pose, root, side, u)
         cdx, cdy, z, crot = moves.camera(b["camera"], u, seed * 7919 + bi)
         if (cdx, cdy, z, crot) != (0, 0, 1, 0):
             M = cv2.getRotationMatrix2D((W / 2, H / 2), crot, z)
