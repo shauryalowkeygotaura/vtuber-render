@@ -91,24 +91,32 @@ RIM = (236, 246, 255)   # BGR, cool white
 
 
 def _rim(canvas: np.ndarray, layer: np.ndarray, px: int = 7):
-    """Comic sticker edge + soft glow behind the avatar so it reads on any b-roll."""
+    """Comic sticker edge + soft glow behind the avatar so it reads on any b-roll.
+    layer is premultiplied BGRA (puppet.render output). The outline is built at half
+    resolution and the glow at 1/4 (full-res morphology cost ~700 ms a frame)."""
     a = layer[..., 3]
-    ys, xs = np.nonzero(a > 8)
+    ys, xs = np.nonzero(a[::4, ::4] > 8)
     if not len(ys):
         return
-    y0, y1 = max(0, ys.min() - 40), min(H, ys.max() + 41)
-    x0, x1 = max(0, xs.min() - 40), min(W, xs.max() + 41)
-    sub = a[y0:y1, x0:x1].astype(np.uint8)   # uint8 morphology is ~10x faster than float32
-    # edge at full res (it must be crisp); the soft glow at 1/4 res and scaled back up (was 700 ms/frame)
-    edge = cv2.dilate(sub, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * px + 1, 2 * px + 1)))
-    h, w = edge.shape
-    small = cv2.resize(edge, (max(1, w // 4), max(1, h // 4)), interpolation=cv2.INTER_AREA)
-    glow = cv2.resize(cv2.GaussianBlur(small, (0, 0), 3.5), (w, h), interpolation=cv2.INTER_LINEAR) * 0.55
-    rim = np.maximum(edge.astype(np.float32), glow)[..., None] * (1 / 255.0)
+    y0, y1 = max(0, ys.min() * 4 - 44), min(H, ys.max() * 4 + 48)
+    x0, x1 = max(0, xs.min() * 4 - 44), min(W, xs.max() * 4 + 48)
+    sub = a[y0:y1, x0:x1]
+    h, w = sub.shape
+    half = cv2.resize(sub, (w // 2, h // 2), interpolation=cv2.INTER_AREA).astype(np.uint8)
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (px + 1, px + 1))
+    edge = cv2.dilate(half, k)
+    quarter = cv2.resize(edge, (w // 4, h // 4), interpolation=cv2.INTER_AREA)
+    glow = cv2.resize(cv2.GaussianBlur(quarter, (0, 0), 3.5), (w // 2, h // 2), interpolation=cv2.INTER_LINEAR)
+    rim = cv2.max(edge, (glow.astype(np.float32) * 0.55).astype(np.uint8))
+    rim = cv2.resize(rim, (w, h), interpolation=cv2.INTER_LINEAR).astype(np.float32) * (1 / 255.0)
     roi = canvas[y0:y1, x0:x1]
-    roi[..., :3] = np.asarray(RIM, np.float32) * rim + roi[..., :3] * (1 - rim)
-    la = layer[y0:y1, x0:x1, 3:4] / 255.0
-    roi[..., :3] = layer[y0:y1, x0:x1, :3] * la + roi[..., :3] * (1 - la)
+    rgb = np.ascontiguousarray(roi[..., :3])
+    r3 = cv2.merge([rim, rim, rim])
+    rgb = cv2.add(cv2.multiply(rgb, 1 - r3), r3 * np.asarray(RIM, np.float32))
+    la = layer[y0:y1, x0:x1, 3] * (1 / 255.0)
+    rgb = cv2.add(cv2.multiply(rgb, cv2.merge([1 - la, 1 - la, 1 - la])),
+                  np.ascontiguousarray(layer[y0:y1, x0:x1, :3]))
+    roi[..., :3] = rgb
 
 
 RIG = Path(__file__).resolve().parent.parent / "assets/avatar/rig-base.png"
@@ -198,7 +206,7 @@ def render(edit: dict, out: Path, puppet: Puppet | None = None, use_broll: bool 
     print(f"  b-roll ready in {time.time() - t0:.0f}s")
     n = int(round(beats[-1]["end"] * FPS))
     # each worker holds a puppet (~0.6 GB peak); the laptop has run out of memory before, so cap it
-    workers = workers or max(1, min(4, (os.cpu_count() or 2) // 2))
+    workers = workers or max(1, min(6, (os.cpu_count() or 2) // 3))
     seg_dir = out.parent / f".{out.stem}_segs"
     seg_dir.mkdir(exist_ok=True)
     bounds = [round(n * k / workers) for k in range(workers + 1)]

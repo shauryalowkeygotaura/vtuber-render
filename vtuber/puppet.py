@@ -102,6 +102,11 @@ class Puppet:
         for i, k in enumerate(names):
             masks[k] = fg & (lab == i) & ~(head_core if k in ("torso", "legs") else head)
         masks["torso"] |= masks.pop("legs")
+        # stray specks of hand/watch that ended up labelled torso would stay pinned at the hip when
+        # the arm lifts: keep only the torso's main body
+        n_, lab_, st_, _ = cv2.connectedComponentsWithStats(masks["torso"].astype(np.uint8))
+        if n_ > 2:
+            masks["torso"] = lab_ == 1 + int(np.argmax(st_[1:, cv2.CC_STAT_AREA]))
         masks["head"] = head
 
         caps = {}
@@ -119,7 +124,7 @@ class Puppet:
                 m = masks[f"{s}_{p}"].astype(np.uint8)
                 masks[f"{s}_{p}"] = (cv2.dilate(m, np.ones((5, 5), np.uint8)) > 0) & fg
         fm = {k: cv2.GaussianBlur(v.astype(np.float32), (3, 3), 0) for k, v in masks.items()}
-        order = ["torso", "A_upper", "B_upper", "A_fore", "B_fore", "A_hand", "B_hand", "head"]
+        order = ["torso", "A_fore", "B_fore", "A_upper", "B_upper", "A_hand", "B_hand", "head"]  # cuffs overlap forearms
         p = cls(rig, j, fm, caps, order)
         p._ink_cuts(fg)
         p.bbox = {}
@@ -151,6 +156,7 @@ class Puppet:
         if key not in cache:
             im, wr = hand(kind, L, mirror=(side == "A"))
             a = np.asarray(im).astype(np.float32)[..., [2, 1, 0, 3]]
+            a[..., :3] *= a[..., 3:4] * (1 / 255.0)   # premultiplied, like every sprite _blit takes
             cache[key] = (a, wr)
         spr, wr = cache[key]
         # sprite px -> art px: put the sprite's wrist on the drawing's wrist
@@ -173,12 +179,32 @@ class Puppet:
             T[f"{s}_fore"], T[f"{s}_hand"] = fo, ha
         return T
 
+    def _piece(self, k: str, art: np.ndarray | None) -> np.ndarray:
+        """Premultiplied BGRA float sprite for piece k. Body pieces never change (only the face
+        does), so they're cut once and cached; the head is re-cut from this frame's art."""
+        cache = self.__dict__.setdefault("_piece_cache", {})
+        if k != "head" and k in cache:
+            return cache[k]
+        y0, y1, x0, x1 = self.bbox[k]
+        src = art if art is not None else self._rest_art()
+        piece = src[y0:y1, x0:x1].astype(np.float32)[..., [2, 1, 0, 3]]
+        piece[..., 3] *= self.masks[k][y0:y1, x0:x1]
+        ink = self.cut_ink[k][y0:y1, x0:x1] & (self.masks[k][y0:y1, x0:x1] > 0.5)
+        piece[ink] = (*INK, 255)
+        piece[..., :3] *= piece[..., 3:4] * (1 / 255.0)
+        if k != "head":
+            cache[k] = piece
+        return piece
+
+    def _rest_art(self) -> np.ndarray:
+        if not hasattr(self, "_rest"):
+            self._rest = np.asarray(self.rig.frame())
+        return self._rest
+
     def render(self, pose: dict, root: np.ndarray, size: tuple[int, int], face: dict | None = None,
                canvas: np.ndarray | None = None) -> np.ndarray:
         """Draw the posed puppet. root = 3x3 art->canvas matrix. Returns BGRA float canvas."""
         W, H = size
-        art = np.asarray(self.rig.frame(**(face or {}))).astype(np.float32)  # RGBA
-        art = art[..., [2, 1, 0, 3]]
         out = np.zeros((H, W, 4), np.float32) if canvas is None else canvas
         T = self.transforms(pose)
         for k in self.order:
@@ -194,19 +220,16 @@ class Puppet:
                 shade = col if k.endswith("_upper") else tuple(int(v * 0.8) for v in col)  # shoulder: plain sleeve
                 cv2.circle(out, (int(cc[0]), int(cc[1])), int(r * s), (*shade, 255), -1, cv2.LINE_AA)
                 cv2.circle(out, (int(cc[0]), int(cc[1])), int(r * s * 0.8), (*col, 255), -1, cv2.LINE_AA)
-            y0, y1, x0, x1 = self.bbox[k]
-            piece = art[y0:y1, x0:x1].copy()
-            piece[..., 3] *= self.masks[k][y0:y1, x0:x1]
-            ink = self.cut_ink[k][y0:y1, x0:x1] & (self.masks[k][y0:y1, x0:x1] > 0.5)
-            piece[ink] = (*INK, 255)
+            art = np.asarray(self.rig.frame(**(face or {}))) if k == "head" else None
+            y0, x0 = self.bbox[k][0], self.bbox[k][2]
             off = np.array([[1, 0, x0], [0, 1, y0], [0, 0, 1]], np.float32)
-            _blit(out, piece, (np.vstack([M, [0, 0, 1]]) @ off)[:2])
+            _blit(out, self._piece(k, art), (np.vstack([M, [0, 0, 1]]) @ off)[:2])
         return out
 
 
 def _blit(out: np.ndarray, src: np.ndarray, M: np.ndarray):
-    """Warp src (BGRA float) by 2x3 M and alpha-composite it onto out, touching
-    only the destination box the warped sprite covers."""
+    """Warp a PREMULTIPLIED BGRA float sprite by 2x3 M and composite it onto out
+    (over operator), touching only the destination box the warped sprite covers."""
     h, w = src.shape[:2]
     corners = M @ np.array([[0, w, 0, w], [0, 0, h, h], [1, 1, 1, 1]], np.float32)
     H, W = out.shape[:2]
@@ -219,6 +242,7 @@ def _blit(out: np.ndarray, src: np.ndarray, M: np.ndarray):
     Ml[1, 2] -= Y0
     warped = cv2.warpAffine(src, Ml, (X1 - X0, Y1 - Y0), flags=cv2.INTER_LINEAR, borderValue=(0, 0, 0, 0))
     roi = out[Y0:Y1, X0:X1]
-    a = warped[..., 3:4] / 255.0
-    roi[..., :3] = warped[..., :3] * a + roi[..., :3] * (1 - a)
-    roi[..., 3:4] = np.maximum(roi[..., 3:4], warped[..., 3:4])
+    a = warped[..., 3] * (1 / 255.0)
+    inv = cv2.merge([1 - a, 1 - a, 1 - a])
+    roi[..., :3] = cv2.add(cv2.multiply(np.ascontiguousarray(roi[..., :3]), inv), np.ascontiguousarray(warped[..., :3]))
+    roi[..., 3] = np.maximum(roi[..., 3], warped[..., 3])
