@@ -99,6 +99,15 @@ def _title(c: dict) -> str:
     return " ".join(words[:-1] if words and words[-1].isdigit() else words)[:120]
 
 
+SAFE = ("dark abstract technology background", "neon light particles", "code on screen dark",
+        "blurred city lights night", "abstract gradient motion")
+
+
+def rng_safe(term: str) -> str:
+    """A neutral backdrop query, stable per term so re-renders pick the same one."""
+    return SAFE[sum(map(ord, term)) % len(SAFE)]
+
+
 def judge(line: str, term: str, cands: list[dict]) -> tuple[int | None, str]:
     """Groq reads the spoken line and the candidate clip titles: returns the best index
     (None = nothing fits) and a better search query to try if nothing fits."""
@@ -136,6 +145,12 @@ def fetch(term: str, seconds: float, used: set[str], line: str = "") -> Path | N
         if apick is not None:
             print(f"  broll: '{term}' didn't fit, using '{alt}'")
             term, cands, pick = alt, alt_cands, apick
+    if pick is None and line:
+        # nothing on-topic exists: a neutral moving background beats a wrong one (CN Tower for "no internet")
+        print(f"  broll: nothing fits '{term}', using a neutral background", file=sys.stderr)
+        term = rng_safe(term)
+        cands = search(term, seconds, used)
+        pick = 0
     if pick:
         cands = [cands[pick]] + cands[:pick] + cands[pick + 1:]
     for c in cands:
