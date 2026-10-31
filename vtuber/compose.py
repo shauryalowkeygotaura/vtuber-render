@@ -220,6 +220,27 @@ def _frames(edit: dict, beats: list[dict], clips: list, i0: int, i1: int, out: P
     return out
 
 
+# A worker holds a puppet, decoded b-roll and an ffmpeg encoder. The old
+# comment said ~0.6 GB, but 6 workers + a Claude session OOM-killed the
+# reel-v5 render on this 15 GB laptop (2026-10-31), so size the pool from
+# memory that is actually FREE, not from core count (18 cores said 6).
+WORKER_GB = 1.5
+RESERVE_GB = 3.0  # left for the OS, the browser and the Claude session
+
+
+def default_workers(free_gb: float | None = None, cpus: int | None = None) -> int:
+    import os
+    if free_gb is None:
+        try:
+            import psutil
+            free_gb = psutil.virtual_memory().available / 1024**3
+        except Exception:
+            free_gb = RESERVE_GB + 2 * WORKER_GB  # unknown: assume room for 2
+    cpus = cpus or os.cpu_count() or 2
+    by_mem = int((free_gb - RESERVE_GB) // WORKER_GB)
+    return max(1, min(6, cpus // 3, by_mem))
+
+
 def render(edit: dict, out: Path, puppet: Puppet | None = None, use_broll: bool = True,
            workers: int | None = None) -> Path:
     """Fetch b-roll once, render the frames in parallel segments, then join + add audio."""
@@ -242,8 +263,7 @@ def render(edit: dict, out: Path, puppet: Puppet | None = None, use_broll: bool 
         clips.append(clip)
     print(f"  b-roll ready in {time.time() - t0:.0f}s")
     n = int(round(beats[-1]["end"] * FPS))
-    # each worker holds a puppet (~0.6 GB peak); the laptop has run out of memory before, so cap it
-    workers = workers or max(1, min(6, (os.cpu_count() or 2) // 3))
+    workers = workers or default_workers()
     seg_dir = out.parent / f".{out.stem}_segs"
     seg_dir.mkdir(exist_ok=True)
     bounds = [round(n * k / workers) for k in range(workers + 1)]

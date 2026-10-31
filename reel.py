@@ -48,7 +48,7 @@ def main() -> int:
                     help="orpheus = Groq Orpheus (default, expressive); edge = free Microsoft voice")
     ap.add_argument("--voice", help="orpheus: troy (default), austin, daniel...; edge: en-IN-PrabhatNeural")
     ap.add_argument("--speed", type=float, default=1.12, help="voice tempo (1.12 = a touch faster, like a reel)")
-    ap.add_argument("--workers", type=int, help="parallel render processes (default 4)")
+    ap.add_argument("--workers", type=int, help="parallel render processes (default: fits free RAM, max 6)")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--no-broll", action="store_true")
