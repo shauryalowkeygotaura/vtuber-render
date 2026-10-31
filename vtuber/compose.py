@@ -198,7 +198,7 @@ def render(edit: dict, out: Path, puppet: Puppet | None = None, use_broll: bool 
         clip = None
         if use_broll and b.get("broll"):
             try:
-                clip = broll.fetch(b["broll"], b["end"] - b["start"] + 0.2, used)
+                clip = broll.fetch(b["broll"], b["end"] - b["start"] + 0.2, used, line=b.get("text", ""))
             except RuntimeError as e:
                 print(f"  broll off: {e}", file=sys.stderr)
                 use_broll = False

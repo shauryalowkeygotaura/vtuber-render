@@ -92,9 +92,53 @@ def search(term: str, min_seconds: float, used: set[str] | None = None, pages: i
     return out
 
 
-def fetch(term: str, seconds: float, used: set[str]) -> Path | None:
-    """Download (cached) and conform one clip to 1080x1920/30fps/no audio, `seconds` long."""
-    for c in search(term, seconds, used):
+def _title(c: dict) -> str:
+    """Pexels page slug -> readable title ('a-person-using-a-laptop-7126537' -> 'a person using a laptop')."""
+    slug = c["page"].rstrip("/").rsplit("/", 1)[-1]
+    words = slug.split("-")
+    return " ".join(words[:-1] if words and words[-1].isdigit() else words)[:120]
+
+
+def judge(line: str, term: str, cands: list[dict]) -> tuple[int | None, str]:
+    """Groq reads the spoken line and the candidate clip titles: returns the best index
+    (None = nothing fits) and a better search query to try if nothing fits."""
+    if not line or not cands:
+        return 0 if cands else None, ""
+    try:
+        from vtuber import groq_pool  # noqa: PLC0415
+        menu = "\n".join(f"{i}: {_title(c)}" for i, c in enumerate(cands[:10]))
+        resp = groq_pool.chat(groq_pool.FAST, messages=[
+            {"role": "system", "content":
+                "You pick background stock footage for one line of a vertical reel. The clip must show the "
+                "line's idea literally or as an obvious visual metaphor; a clip that only shares a word "
+                "(a jungle pipeline for a 'deployment pipeline') is WRONG. Reply JSON "
+                '{"pick": <index or -1>, "alt": "<2-4 word concrete search query to try if -1>"}'},
+            {"role": "user", "content": f"Line: {line}\nSearch: {term}\nClips:\n{menu}"}],
+            max_tokens=120, response_format={"type": "json_object"}, require_content=True)
+        data = json.loads(resp.choices[0].message.content)
+        pick = int(data.get("pick", -1))
+        alt = data.get("alt") if isinstance(data.get("alt"), str) else ""
+        alt = " ".join("".join(ch for ch in w if ch.isalnum()) for w in alt.lower().split()[:5]).strip()
+        return (pick if 0 <= pick < min(10, len(cands)) else None), alt
+    except Exception as e:  # noqa: BLE001 - judging is a bonus; fall back to title ranking
+        print(f"  broll: judge unavailable ({str(e)[:80]})", file=sys.stderr)
+        return 0, ""
+
+
+def fetch(term: str, seconds: float, used: set[str], line: str = "") -> Path | None:
+    """Download (cached) and conform one clip to 1080x1920/30fps/no audio, `seconds` long.
+    With `line`, Groq judges the candidates; if none fit it tries its better query once."""
+    cands = search(term, seconds, used)
+    pick, alt = judge(line, term, cands)
+    if pick is None and alt and alt != term:
+        alt_cands = search(alt, seconds, used)
+        apick, _ = judge(line, alt, alt_cands)
+        if apick is not None:
+            print(f"  broll: '{term}' didn't fit, using '{alt}'")
+            term, cands, pick = alt, alt_cands, apick
+    if pick:
+        cands = [cands[pick]] + cands[:pick] + cands[pick + 1:]
+    for c in cands:
         CACHE.mkdir(parents=True, exist_ok=True)
         raw = CACHE / f"{c['id'].replace(':', '_')}.mp4"
         if not raw.exists() or raw.stat().st_size < 100_000:
