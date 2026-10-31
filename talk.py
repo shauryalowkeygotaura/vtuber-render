@@ -50,7 +50,7 @@ def synth_script(text: str, voice: str, wav_path: Path) -> list[tuple[str, float
     with a breath of silence. Returns word timings for captions."""
     orp = _orpheus()
     sentences = [s.strip() for s in re.split(r"(?<=[.?!])\s+", text.strip()) if s.strip()]
-    gap = b"\x00\x00" * int(orp.SR * 0.16)
+    gap = b"\x00\x00" * int(orp.SR * 0.04)  # tight: long gaps made it sound read-out-loud
     pcm = b""
     for i, s in enumerate(sentences, 1):
         if not orp.speakable(s):

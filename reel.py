@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -46,6 +47,7 @@ def main() -> int:
     ap.add_argument("--tts", choices=("orpheus", "edge"), default="orpheus",
                     help="orpheus = Groq Orpheus (default, expressive); edge = free Microsoft voice")
     ap.add_argument("--voice", help="orpheus: troy (default), austin, daniel...; edge: en-IN-PrabhatNeural")
+    ap.add_argument("--speed", type=float, default=1.12, help="voice tempo (1.12 = a touch faster, like a reel)")
     ap.add_argument("--workers", type=int, help="parallel render processes (default 4)")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--no-llm", action="store_true")
@@ -73,6 +75,15 @@ def main() -> int:
                 words = talk.synth_edge(text, a.voice or "en-IN-PrabhatNeural", audio)
         else:
             audio = Path(a.audio)
+        if a.speed and abs(a.speed - 1) > 0.01:   # whole-track tempo, pitch kept
+            fast = audio.with_name(audio.stem + f".x{a.speed:g}.wav")
+            r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(audio), "-filter:a", f"atempo={a.speed}",
+                                str(fast)], capture_output=True, text=True)
+            if r.returncode == 0:
+                audio = fast
+                words = [(w, s_ / a.speed, e / a.speed) for w, s_, e in words]
+            else:
+                print(f"  speed-up failed, keeping normal tempo: {r.stderr[-200:]}", file=sys.stderr)
         beats = performance.direct(str(audio), use_llm=not a.no_llm, expressions=tuple(Rig.LOOKS))
         if not beats:
             print("no speech found in the audio", file=sys.stderr)
