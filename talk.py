@@ -70,11 +70,24 @@ def _norm(w: str) -> str:
     return re.sub(r"[^a-z0-9]", "", w.lower())
 
 
+# How Orpheus should SAY a word (captions still use the script's spelling). Without
+# these it read Silero as "delibera" and Pipecat as "peepacat".
+SAY = {"silero": "sih-lair-oh", "pipecat": "pipe cat", "hinglish": "hing-lish", "groq": "grock"}
+
+
+def _spoken(sentence: str) -> str:
+    return re.sub(r"[A-Za-z]+", lambda m: SAY.get(m.group(0).lower(), m.group(0)), sentence)
+
+
 def _verified(orp, sentence: str, voice: str, tries: int = 3) -> bytes:
     """Orpheus sometimes garbles a line (skipped words, mumble, wrong word). Whisper the
-    take back and re-roll until at least 80% of the script's words are heard and the
-    pace is human; keep the best take if none pass."""
-    want = [_norm(w) for w in sentence.split() if _norm(w)]
+    take back and re-roll until 90% of the words are heard, EVERY word of 5+ letters is
+    heard (an 80% bar let "comment" come out as "call") and the pace is human; keep the
+    best take if none pass. Fillers (um, uh) are short, so Whisper dropping them is fine."""
+    # Brand names are skipped in the check: Whisper spells them its own way however well they're said.
+    want = [_norm(w) for w in sentence.split() if _norm(w) and _norm(w) not in SAY]
+    sentence = _spoken(sentence)
+    key = [w for w in want if len(w) >= 5]
     best, best_score = b"", -1.0
     for attempt in range(tries):
         pcm = orp.synth(sentence, voice=voice)
@@ -84,8 +97,9 @@ def _verified(orp, sentence: str, voice: str, tries: int = 3) -> bytes:
         except Exception:  # noqa: BLE001 - can't check: accept the take
             return pcm
         score = sum(w in heard for w in want) / max(1, len(want))
+        keys_ok = all(w in heard for w in key)
         pace_ok = 0.12 <= max(0.0, secs - 0.7) / max(1, len(want)) <= 0.9  # minus lead/tail silence
-        if score >= 0.8 and pace_ok:
+        if score >= 0.9 and keys_ok and pace_ok:
             return pcm
         print(f"  voice: re-rolling '{sentence[:40]}' (heard {score:.0%}, {secs:.1f}s)", flush=True)
         if score > best_score:
