@@ -183,12 +183,15 @@ def load_user_memes(meme_dir: Path = MEME_DIR) -> dict[str, dict]:
         if not words or not path.is_file():
             print(f"  memes.json: skipping {name!r} (needs words and {path.name} in {meme_dir.name}/)", file=sys.stderr)
             continue
-        gain = m.get("gain_db", -12)
+        gain, max_s = m.get("gain_db", -12), m.get("max_s", 2.5)
         out[name] = {"path": path, "words": words,
-                     "gain_db": float(gain) if isinstance(gain, (int, float)) and -40 <= gain <= 0 else -12.0}
+                     "gain_db": float(gain) if isinstance(gain, (int, float)) and -40 <= gain <= 0 else -12.0,
+                     # memes need their full punchline ("HOG RIDAAA"), not the 0.9 s cue cut
+                     "max_s": float(max_s) if isinstance(max_s, (int, float)) and 0.2 <= max_s <= 6 else 2.5}
     return out
 
 
+BUILTIN_CUES = dict(CUES)   # before your memes are merged in (tests use this)
 USER_MEMES = load_user_memes()
 for _name, _m in USER_MEMES.items():
     SFX[_name] = ("file:" + str(_m["path"]), 0, _m["gain_db"], 0.0)
@@ -420,8 +423,10 @@ def build(edit: dict, dest: Path) -> Path:
     # SFX: movement sounds at the beat start, meaning sounds on their word
     hits = [(b["start"], b["sfx"], "") for b in beats if b["sfx"] != "none"]
     # meaning sounds are cut short so fast speech can carry two in a row (ring -> stamp)
-    hits += [(t, name, f"atrim=0:{CUE_MAX_S},afade=t=out:st={CUE_MAX_S - 0.18:.2f}:d=0.18,")
-             for b in beats for name, t in b["cues"]]
+    for b in beats:
+        for name, t in b["cues"]:
+            ln = USER_MEMES[name]["max_s"] if name in USER_MEMES else CUE_MAX_S
+            hits.append((t, name, f"atrim=0:{ln},afade=t=out:st={ln - 0.18:.2f}:d=0.18,"))
     for t, name, trim in hits:
         q, max_ms, peak, off = SFX[name]
         clip = Path(q[5:]) if q.startswith("file:") else sfx.fetch(q, max_ms)

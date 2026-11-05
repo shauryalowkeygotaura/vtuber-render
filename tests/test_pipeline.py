@@ -92,8 +92,9 @@ def _edit(beats, **kw):
     return {"seed": 7, "audio": None, "beats": beats, **kw}
 
 
-def test_soundtrack_keeps_voice_dry_and_puts_sounds_on_meaning():
+def test_soundtrack_keeps_voice_dry_and_puts_sounds_on_meaning(monkeypatch):
     from vtuber import soundtrack as st
+    monkeypatch.setattr(st, "CUES", st.BUILTIN_CUES)      # independent of the local memes.json
     beats = [
         {"start": 0, "end": 2, "text": "voice AI is charging you", "emotion": "angry", "enter": "drop_from_sky",
          "camera": "zoom_punch", "hand": "none"},
