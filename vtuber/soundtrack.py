@@ -148,6 +148,53 @@ CUES: dict[str, tuple[str, str]] = {
     "cheer": (r"\b(viral|crush\w*|insane|amazing)\b", "big hype"),
     "glass": (r"\b(crash\w*|smash\w*|shatter\w*)\b", "crash, smash"),
 }
+
+
+# ── your own meme clips (e.g. Clash of Clans) ────────────────────────────────
+# Drop audio files in assets/sfx/memes/ and list them in memes.json:
+#   {"hog_rider": {"file": "hog-rider.mp3", "words": ["let's go", "charge", "attack"], "gain_db": -12}}
+# They join the cue menu AHEAD of everything else, so they win their words.
+# The clip files are git-ignored: they are other people's audio, kept local.
+MEME_DIR = ROOT / "assets" / "sfx" / "memes"
+_SAFE_NAME = re.compile(r"[a-z0-9_]{1,30}")
+_SAFE_WORD = re.compile(r"[a-z0-9' ]{1,40}")
+_SAFE_FILE = re.compile(r"[A-Za-z0-9_.-]{1,80}\.(mp3|wav|ogg|m4a)")
+
+
+def load_user_memes(meme_dir: Path = MEME_DIR) -> dict[str, dict]:
+    """Whitelisted entries from memes.json whose file exists. Bad entries are skipped, loudly."""
+    try:
+        raw = json.loads((meme_dir / "memes.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as exc:
+        print(f"  memes.json is not valid JSON ({exc}); no custom memes", file=sys.stderr)
+        return {}
+    out = {}
+    for name, m in (raw.items() if isinstance(raw, dict) else []):
+        if not (isinstance(m, dict) and _SAFE_NAME.fullmatch(str(name)) and _SAFE_FILE.fullmatch(str(m.get("file", "")))):
+            print(f"  memes.json: skipping {name!r} (name a-z0-9_, file like clip.mp3)", file=sys.stderr)
+            continue
+        given = m.get("words")
+        given = [given] if isinstance(given, str) else given if isinstance(given, list) else []
+        words = [w.strip().lower() for w in given if isinstance(w, str)]
+        words = [w for w in words if _SAFE_WORD.fullmatch(w)]
+        path = meme_dir / m["file"]
+        if not words or not path.is_file():
+            print(f"  memes.json: skipping {name!r} (needs words and {path.name} in {meme_dir.name}/)", file=sys.stderr)
+            continue
+        gain = m.get("gain_db", -12)
+        out[name] = {"path": path, "words": words,
+                     "gain_db": float(gain) if isinstance(gain, (int, float)) and -40 <= gain <= 0 else -12.0}
+    return out
+
+
+USER_MEMES = load_user_memes()
+for _name, _m in USER_MEMES.items():
+    SFX[_name] = ("file:" + str(_m["path"]), 0, _m["gain_db"], 0.0)
+CUES = {**{n: (r"\b(" + "|".join(re.escape(w) for w in m["words"]) + r")\b", f"your meme clip: {', '.join(m['words'])}")
+           for n, m in USER_MEMES.items()}, **{k: v for k, v in CUES.items() if k not in USER_MEMES}}
+
 CUE_GAP = 0.3         # seconds between any two meaning sounds (speech is fast; clips are cut to CUE_MAX_S)
 CUE_MAX_S = 0.9       # a meaning sound plays at most this long, then fades
 CUE_REPEAT = 8.0      # the same meaning sound never twice inside this window
@@ -377,7 +424,7 @@ def build(edit: dict, dest: Path) -> Path:
              for b in beats for name, t in b["cues"]]
     for t, name, trim in hits:
         q, max_ms, peak, off = SFX[name]
-        clip = sfx.fetch(q, max_ms)
+        clip = Path(q[5:]) if q.startswith("file:") else sfx.fetch(q, max_ms)
         if not clip:
             continue
         inputs += ["-i", str(clip)]

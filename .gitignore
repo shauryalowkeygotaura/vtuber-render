@@ -16,3 +16,6 @@ assets/broll/
 samples/voice/*.m4a
 samples/voice/*.wav
 assets/ir/
+assets/sfx/memes/*
+!assets/sfx/memes/README.md
+!assets/sfx/memes/memes.example.json

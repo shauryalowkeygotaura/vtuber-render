@@ -1,0 +1,6 @@
+{
+ "hog_rider": {"file": "hog-rider.mp3", "words": ["let's go", "charge", "attack", "rush"], "gain_db": -11},
+ "goblin_laugh": {"file": "goblin-laugh.mp3", "words": ["free", "money", "steal", "loot"], "gain_db": -13},
+ "barbarian_yell": {"file": "barbarian-yell.mp3", "words": ["war", "fight", "battle", "destroy"], "gain_db": -12},
+ "wizard_tower": {"file": "wizard-tower.mp3", "words": ["magic", "ai", "boom"], "gain_db": -14}
+}

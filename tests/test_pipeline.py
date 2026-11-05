@@ -151,3 +151,24 @@ def test_soundtrack_renders_offline_and_keeps_timing(tmp_path):
     dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(out)],
                                capture_output=True, text=True).stdout)
     assert 4.0 <= dur <= 5.6
+
+
+def test_user_memes_whitelist_and_never_crash(tmp_path):
+    import json as _json
+    import wave
+    from vtuber import soundtrack as st
+    with wave.open(str(tmp_path / "hog-rider.wav"), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(b"\0\0" * 1600)
+    (tmp_path / "memes.json").write_text(_json.dumps({
+        "hog_rider": {"file": "hog-rider.wav", "words": ["let's go", "charge"]},
+        "bad_words": {"file": "hog-rider.wav", "words": 5},
+        "../evil": {"file": "hog-rider.wav", "words": ["x"]},
+        "path_escape": {"file": "../../secret.wav", "words": ["x"]},
+        "missing": {"file": "nope.mp3", "words": ["x"]},
+        "regexy": {"file": "hog-rider.wav", "words": ["(a+)+$", "ok"], "gain_db": 99},
+    }), encoding="utf-8")
+    m = st.load_user_memes(tmp_path)
+    assert set(m) == {"hog_rider", "regexy"}
+    assert m["regexy"]["words"] == ["ok"] and m["regexy"]["gain_db"] == -12.0
+    (tmp_path / "memes.json").write_text("{not json", encoding="utf-8")
+    assert st.load_user_memes(tmp_path) == {}
