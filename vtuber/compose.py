@@ -7,8 +7,11 @@ edit.json (written by the director, editable by hand):
   "beats": [
     {"start": 0.0, "end": 2.2, "text": "...", "emotion": "happy", "talk": [0..1 per frame] (optional),
      "spot": "center_big", "enter": "drop_from_sky", "camera": "zoom_punch",
-     "arms": "wave", "broll": "neon city night"}
-  ]
+     "arms": "wave", "broll": "neon city night",
+     "vfx": "chipmunk", "mfx": "drop", "sfx": "boing"}      (optional, see soundtrack.py)
+  ],
+  "music": {"mood": "funky" | "auto", "file": null, "gain_db": -17} | null,
+  "soundtrack": true      (false = dry voice only)
 }
 Unknown names fall back to safe defaults, so a hand edit can never crash a render.
 """
@@ -29,6 +32,7 @@ from vtuber.avatar import Rig
 from vtuber.puppet import Puppet
 
 W, H, FPS = moves.W, moves.H, 30
+TAIL_HOLD = 1.5   # seconds the last frame is held when a soundtrack is mixed in (reverb tail + music fade)
 FEET = (390.0, 1335.0)     # body centre x and feet y in rig-base.png
 EMOTIONS = tuple(Rig.LOOKS)
 
@@ -277,9 +281,20 @@ def render(edit: dict, out: Path, puppet: Puppet | None = None, use_broll: bool 
     lst.write_text("".join(f"file '{s_.name}'\n" for s_ in segs), encoding="utf-8")
     cmd = ["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(lst)]
     audio = edit.get("audio")
+    hold = 0.0
+    if audio and edit.get("soundtrack", True):   # music + voice FX + move SFX (vtuber/soundtrack.py)
+        from vtuber import soundtrack
+        mixed = soundtrack.build(edit, out.with_suffix(".mix.wav"))
+        hold = TAIL_HOLD if mixed != Path(audio) else 0.0
+        audio = mixed
     if audio:
         cmd += ["-i", str(audio), "-map", "0:v", "-map", "1:a", "-c:a", "aac", "-b:a", "192k"]
-    cmd += ["-c:v", "copy", "-movflags", "+faststart", "-t", f"{n / FPS:.3f}", str(out)]
+    if hold:   # freeze the last frame so the reverb tail and music fade-out are heard, not cut
+        cmd += ["-vf", f"tpad=stop_mode=clone:stop_duration={hold}", "-c:v", "libx264", "-crf", "18",
+                "-preset", "veryfast", "-pix_fmt", "yuv420p"]
+    else:
+        cmd += ["-c:v", "copy"]
+    cmd += ["-movflags", "+faststart", "-t", f"{n / FPS + hold:.3f}", str(out)]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"ffmpeg join failed: {r.stderr[-300:]}")

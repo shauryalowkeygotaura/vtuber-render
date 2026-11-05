@@ -86,3 +86,68 @@ def test_photo_rig_moves_only_the_lower_face():
     talking = rig.frame(1, 0, "neutral", 0, 0)
     assert np.array_equal(shut[:60], img[:60])            # above the face: untouched
     assert not np.array_equal(talking[118:150, 85:115], shut[118:150, 85:115])  # mouth opened
+
+
+def _edit(beats, **kw):
+    return {"seed": 7, "audio": None, "beats": beats, **kw}
+
+
+def test_soundtrack_keeps_voice_dry_and_puts_sounds_on_meaning():
+    from vtuber import soundtrack as st
+    beats = [
+        {"start": 0, "end": 2, "text": "voice AI is charging you", "emotion": "angry", "enter": "drop_from_sky",
+         "camera": "zoom_punch", "hand": "none"},
+        {"start": 2, "end": 4, "text": "loud bit", "emotion": "smug", "enter": "none", "camera": "none", "hand": "megaphone"},
+        {"start": 4, "end": 5.2, "text": "In Hinglish, even.", "emotion": "excited", "hand": "rocket", "camera": "zoom_punch"},
+        {"start": 5.2, "end": 7, "text": "It picks up, it books the appointment", "vfx": "rm -rf", "mfx": "evil",
+         "sfx": "../../x", "cue": "evil"},
+        {"start": 7, "end": 9, "text": "bye", "emotion": "neutral", "vfx": "chipmunk"},
+    ]
+    caps = [{"text": "voice AI is", "start": 0.0, "end": 0.9}, {"text": "charging you", "start": 0.9, "end": 2.0},
+            {"text": "It picks up,", "start": 5.2, "end": 5.6}, {"text": "it books the", "start": 5.6, "end": 6.0},
+            {"text": "appointment", "start": 6.0, "end": 6.6}]
+    p = st.plan(_edit(beats, captions=caps))
+    assert all(b["vfx"] in st.VFX and b["mfx"] in st.MFX and (b["sfx"] in st.SFX or b["sfx"] == "none") for b in p)
+    assert [b["vfx"] for b in p] == ["none", "none", "echo", "none", "chipmunk"]   # dry, one punchline echo, hand edit wins
+    assert p[0]["cues"] == [["cash", 0.9]]                    # cash register on "charging", not the line start
+    assert p[3]["cues"] == []                                 # an unknown hand-set cue is dropped, not guessed
+    auto = st.plan(_edit([dict(beats[3], cue="auto")], captions=caps))
+    assert [c[0] for c in auto[0]["cues"]] == ["phone_ring", "stamp"]   # spoken order, two per line
+    assert st.resolve_music(_edit(beats, music=None), p) == (None, 0.0)   # "music": null turns the bed off
+    meme = st.plan(_edit([{"start": 0, "end": 2, "text": "it's kind of stupid"}], captions=[]))
+    assert meme[0]["cues"][0][0] == "bruh"                   # memes win a shared word
+
+
+def test_speed_edit_keeps_everything_on_the_same_words(tmp_path):
+    import wave
+    import reel
+    sr = 16000
+    voice = tmp_path / "v.wav"
+    with wave.open(str(voice), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes(np.zeros(sr * 3, np.int16).tobytes())
+    e = {"audio": str(voice), "beats": [{"start": 0.0, "end": 1.5}, {"start": 1.5, "end": 3.0}],
+         "captions": [{"text": "hi", "start": 1.2, "end": 1.8}], "mouth": [0.0] * 45 + [1.0] * 45, "widen": [0.0] * 90}
+    f = reel.speed_edit(e, 1.5, tmp_path / "fast.wav")
+    assert f["beats"][1] == {"start": 1.0, "end": 2.0} and f["captions"][0]["start"] == 0.8
+    assert len(f["mouth"]) == 60 and f["mouth"][29] == 0.0 and f["mouth"][31] == 1.0   # mouth opens at 1.0 s, not 1.5
+    assert e["beats"][1]["start"] == 1.5                     # the original plan is untouched
+
+
+def test_soundtrack_renders_offline_and_keeps_timing(tmp_path):
+    import subprocess
+    import wave
+    from vtuber import soundtrack as st
+    sr = 24000
+    t = np.arange(int(sr * 4)) / sr
+    tone = (0.3 * np.sin(2 * np.pi * 220 * t) * 32767).astype(np.int16)
+    voice = tmp_path / "v.wav"
+    with wave.open(str(voice), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes(tone.tobytes())
+    beats = [{"start": 0, "end": 1.5, "text": "a", "vfx": "chipmunk", "sfx": "none"},
+             {"start": 1.5, "end": 3, "text": "b", "vfx": "none", "sfx": "none"},
+             {"start": 3, "end": 4, "text": "c", "vfx": "cave", "sfx": "none"}]
+    out = st.build({"seed": 1, "audio": str(voice), "beats": beats, "music": None}, tmp_path / "m.wav")
+    assert out == tmp_path / "m.wav"
+    dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(out)],
+                               capture_output=True, text=True).stdout)
+    assert 4.0 <= dur <= 5.6

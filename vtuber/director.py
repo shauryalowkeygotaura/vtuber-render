@@ -14,6 +14,7 @@ import random
 import sys
 
 from vtuber import groq_pool, moves
+from vtuber.soundtrack import CUES
 from vtuber.mechhand import TOOLS
 from vtuber.avatar import Rig
 
@@ -28,12 +29,15 @@ and black tie, with robot hands). For EACH numbered line, choose:
 - emotion: one of {list(Rig.LOOKS)}
 - hand: "none" or a robot-hand tool that swaps in, ONLY when the line clearly earns it:
   {"; ".join(f"{k} = {v}" for k, v in TOOLS.items())}. Use it on at most a third of the lines.
+- sound: a sound effect that plays what the line SAYS (like a party popper on a win), one of:
+  {"; ".join(f"{k} = {v[1]}" for k, v in CUES.items())}; or "none". Only when a word in the line clearly
+  earns it; about half the lines, never the same sound on neighbouring lines. His voice itself stays clean.
 - broll: 2-4 word stock-footage search for a VERTICAL background clip that shows the line's idea literally
   (concrete, filmable things: "laptop code screen", "delhi traffic night", not abstractions)
 Rules: the first line is the hook, make it loud (drop_from_sky or spin_in, zoom_punch or shake_heavy).
 Match arms to meaning (pointing at the viewer for "you", shrug for doubt, flex for wins, fan_spin for hype,
 thumbs_up for approval, wave for hello/bye). Vary everything: never repeat an entrance or spot back to back.
-Reply JSON: {{"shots": [{{"i": 0, "spot": ..., "enter": ..., "camera": ..., "arms": ..., "emotion": ..., "hand": ..., "broll": ...}}]}}"""
+Reply JSON: {{"shots": [{{"i": 0, "spot": ..., "enter": ..., "camera": ..., "arms": ..., "emotion": ..., "hand": ..., "sound": ..., "broll": ...}}]}}"""
 
 
 def _split(beats: list[dict]) -> list[dict]:
@@ -99,6 +103,8 @@ def direct(beats: list[dict], seed: int = 7, use_llm: bool = True) -> list[dict]
                                              any(o.get("hand") == b["hand"] and s["start"] - o["start"] < 5
                                                  for o in out)):
             b["hand"] = "none"
+        # meaning sound; "auto" = soundtrack keyword rules decide. Voice FX are not the director's call.
+        b["cue"] = g.get("sound") if g.get("sound") in CUES or g.get("sound") == "none" else "auto"
         b["broll"] = _safe_term(g.get("broll")) or (prev.get("broll") if s.get("cont") else "") or "city night lights"
         # ── rules layer ─────────────────────────────────────────────────────
         if i == 0:   # hook: loud entrance, hard camera

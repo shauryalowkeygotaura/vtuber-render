@@ -1,0 +1,16 @@
+{
+ "funky.mp3": {
+  "title": "Electronic Loop 'Bop'it' - 140bpm",
+  "creator": "tukyo.eth",
+  "license": "cc0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source": "https://freesound.org/people/tukyo.eth/sounds/625530"
+ },
+ "chiptune.mp3": {
+  "title": "chiptune music.wav",
+  "creator": "BloodPixelHero",
+  "license": "cc0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "source": "https://freesound.org/people/BloodPixelHero/sounds/476893"
+ }
+}

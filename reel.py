@@ -7,7 +7,10 @@
   2. beats      performance.direct: Whisper + Groq emotion per sentence
   3. director   Groq picks spot / entrance / camera / arms / emotion / b-roll per shot
   4. edit.json  written to edits/<name>.json: edit any line by hand and re-run with --edit
-  5. compose    Pexels b-roll + puppet + moves + rim + captions + audio -> output/<name>.mp4
+  5. compose    Pexels b-roll + puppet + moves + rim + captions -> output/<name>.mp4
+  6. soundtrack sound effects on the words + on the moves, voice kept clean (vtuber/soundtrack.py)
+
+Audio-only preview of a plan (20 s instead of minutes):  python -m vtuber.soundtrack edits/<name>.json --print
 
 Re-render a hand-edited plan without calling Groq again:
     python reel.py --edit edits/<name>.json
@@ -38,6 +41,27 @@ def mouth_tracks(audio: Path, fps: int) -> tuple[list[float], list[float]]:
     return [round(float(x), 3) for x in open_], [round(float(x), 3) for x in widen]
 
 
+def speed_edit(edit: dict, factor: float, audio_out: Path) -> dict:
+    """The same plan, `factor`x faster: voice re-timed (pitch kept), every timing divided,
+    per-frame mouth tracks resampled. Lip sync and sound cues stay on their words."""
+    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(edit["audio"]), "-filter:a", f"atempo={factor}",
+                        str(audio_out)], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"speed-up failed: {r.stderr[-300:]}")
+    e = json.loads(json.dumps(edit))
+    e["audio"] = str(audio_out)
+    for b in e["beats"]:
+        b["start"], b["end"] = round(b["start"] / factor, 3), round(b["end"] / factor, 3)
+    for c in e.get("captions", []):
+        c["start"], c["end"] = round(c["start"] / factor, 3), round(c["end"] / factor, 3)
+    for k in ("mouth", "widen"):
+        if e.get(k):
+            old = np.asarray(e[k], dtype=float)
+            n = max(1, int(round(len(old) / factor)))
+            e[k] = [round(float(x), 3) for x in np.interp(np.arange(n) * factor, np.arange(len(old)), old)]
+    return e
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     src = ap.add_mutually_exclusive_group(required=True)
@@ -47,11 +71,17 @@ def main() -> int:
     ap.add_argument("--tts", choices=("orpheus", "edge"), default="orpheus",
                     help="orpheus = Groq Orpheus (default, expressive); edge = free Microsoft voice")
     ap.add_argument("--voice", help="orpheus: troy (default), austin, daniel...; edge: en-IN-PrabhatNeural")
-    ap.add_argument("--speed", type=float, default=1.12, help="voice tempo (1.12 = a touch faster, like a reel)")
+    ap.add_argument("--speed", type=float, default=1.5,
+                    help="voice tempo for new reels (1.5 = short-attention reel pace; pitch is kept)")
+    ap.add_argument("--speedup", type=float,
+                    help="with --edit: make an existing plan this many times faster (writes edits/<name>-x<F>.json)")
     ap.add_argument("--workers", type=int, help="parallel render processes (default: fits free RAM, max 6)")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--no-broll", action="store_true")
+    ap.add_argument("--music", default=None,
+                    help="music bed: funky, lofi, chiptune, hiphop, piano, auto (default), a file path, or none")
+    ap.add_argument("--dry", action="store_true", help="no music / voice FX / SFX, just the voice")
     ap.add_argument("--name")
     a = ap.parse_args()
 
@@ -61,6 +91,11 @@ def main() -> int:
         edit_path = Path(a.edit)
         edit = json.loads(edit_path.read_text(encoding="utf-8"))
         name = edit_path.stem
+        if a.speedup and abs(a.speedup - 1) > 0.01:
+            name = f"{name}-x{a.speedup:g}"
+            edit = speed_edit(edit, a.speedup, ROOT / "output" / f"{name}.voice.wav")
+            (ROOT / "edits" / f"{name}.json").write_text(json.dumps(edit, indent=1, ensure_ascii=False), encoding="utf-8")
+            print(f"  plan -> edits/{name}.json ({a.speedup:g}x)")
     else:
         name = a.name or (Path(a.script).stem if a.script and Path(a.script).is_file() else
                           Path(a.audio).stem if a.audio else "reel")
@@ -98,6 +133,10 @@ def main() -> int:
         # beats first and readable; the long per-frame tracks last
         edit_path.write_text(json.dumps(edit, indent=1, ensure_ascii=False), encoding="utf-8")
         print(f"  plan -> {edit_path} ({len(shots)} shots)")
+    if a.music:
+        edit["music"] = None if a.music == "none" else {"file": a.music} if Path(a.music).is_file() else {"mood": a.music}
+    if a.dry:
+        edit["soundtrack"] = False
     out = compose.render(edit, ROOT / "output" / f"{name}.mp4", use_broll=not a.no_broll, workers=a.workers)
     print(f"  video -> {out}")
     return 0
