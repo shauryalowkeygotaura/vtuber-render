@@ -419,6 +419,7 @@ def build(edit: dict, dest: Path) -> Path:
         mix.insert(0, "[dry]")
     else:
         mix.append("[vdry]")
+        graph.append("[vfxsrc]anullsink")   # no voice-FX beats: ffmpeg rejects an unconsumed split output
 
     # SFX: movement sounds at the beat start, meaning sounds on their word
     hits = [(b["start"], b["sfx"], "") for b in beats if b["sfx"] != "none"]

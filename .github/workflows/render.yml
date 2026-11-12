@@ -133,6 +133,7 @@ jobs:
             --speed "$IN_SPEED" --workers "$IN_WORKERS"
           ls -la output
           test -s "output/$IN_NAME.mp4"
+          [ -s "output/$IN_NAME.mix.wav" ] || echo "::warning::soundtrack mix failed: this reel has the DRY voice only (see 'soundtrack failed' above)"
 
       - uses: actions/upload-artifact@v4
         if: always()
