@@ -84,6 +84,23 @@ jobs:
       - name: Sibling repo (paralang)
         run: git clone -q --depth 1 https://github.com/shauryalowkeygotaura/paralang.git ../paralang
 
+      # Meme clips (Supercell audio) live in a PRIVATE repo, read via a read-only
+      # deploy key. No key set -> reels just use the built-in SFX.
+      - name: Meme clips (private repo)
+        env:
+          MEMES_KEY: ${{ secrets.MEMES_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MEMES_KEY" ]; then echo "::notice::MEMES_DEPLOY_KEY not set: built-in SFX only"; exit 0; fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$MEMES_KEY" > ~/.ssh/memes_key && chmod 600 ~/.ssh/memes_key
+          ssh-keyscan -q github.com >> ~/.ssh/known_hosts
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/memes_key -o IdentitiesOnly=yes" \
+            git clone -q --depth 1 git@github.com:shauryalowkeygotaura/vtuber-render-memes.git /tmp/memes
+          rm -f ~/.ssh/memes_key
+          cp /tmp/memes/*.mp3 /tmp/memes/memes.json assets/sfx/memes/
+          echo "memes: $(ls assets/sfx/memes/*.mp3 | wc -l) clips"
+
       - name: Face model
         run: |
           mkdir -p assets/models
