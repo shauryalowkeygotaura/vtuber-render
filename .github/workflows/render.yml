@@ -80,6 +80,10 @@ jobs:
           sudo apt-get install -y -qq ffmpeg
           pip install -q -r requirements.txt
 
+      # talk.py imports Orpheus TTS from the sibling ../paralang checkout.
+      - name: Sibling repo (paralang)
+        run: git clone -q --depth 1 https://github.com/shauryalowkeygotaura/paralang.git ../paralang
+
       - name: Face model
         run: |
           mkdir -p assets/models
