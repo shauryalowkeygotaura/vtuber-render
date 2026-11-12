@@ -1,0 +1,124 @@
+# Renders a reel on GitHub's machine instead of the PC. Actions tab -> render -> Run workflow.
+# The mp4 + edit plan come back as a downloadable artifact. Nothing is posted anywhere.
+name: render
+
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: "Script text to speak (leave empty to use script_file)"
+        required: false
+        default: ""
+      script_file:
+        description: "Or a file in scripts/, e.g. scripts/dashboard-not-broken.txt"
+        required: false
+        default: ""
+      name:
+        description: "Output name (a-z 0-9 -)"
+        required: false
+        default: "reel"
+      tts:
+        description: "Voice engine"
+        type: choice
+        options: [orpheus, edge]
+        default: orpheus
+      speed:
+        description: "Tempo (1.0 - 2.0)"
+        required: false
+        default: "1.5"
+      workers:
+        description: "Parallel render processes (1 - 4)"
+        required: false
+        default: "3"
+
+concurrency:
+  group: render-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      # Whitelist every input before it touches a command line. Inputs arrive as env
+      # vars, never as ${{ }} inside the script, so nothing here is shell-evaluated.
+      - name: Validate inputs
+        env:
+          IN_SCRIPT: ${{ inputs.script }}
+          IN_FILE: ${{ inputs.script_file }}
+          IN_NAME: ${{ inputs.name }}
+          IN_SPEED: ${{ inputs.speed }}
+          IN_WORKERS: ${{ inputs.workers }}
+        run: |
+          set -euo pipefail
+          [[ "$IN_NAME" =~ ^[a-z0-9][a-z0-9-]{0,59}$ ]] || { echo "::error::name must be a-z 0-9 -"; exit 1; }
+          [[ "$IN_SPEED" =~ ^(1(\.[0-9]{1,2})?|2(\.0{1,2})?)$ ]] || { echo "::error::speed must be 1.0-2.0"; exit 1; }
+          [[ "$IN_WORKERS" =~ ^[1-4]$ ]] || { echo "::error::workers must be 1-4"; exit 1; }
+          mkdir -p work
+          if [ -n "$IN_SCRIPT" ]; then
+            printf '%s' "$IN_SCRIPT" > work/script.txt
+          elif [[ "$IN_FILE" =~ ^scripts/[a-z0-9-]+\.txt$ ]] && [ -f "$IN_FILE" ]; then
+            cp "$IN_FILE" work/script.txt
+          else
+            echo "::error::give script text, or script_file like scripts/name.txt that exists"; exit 1
+          fi
+          [ -s work/script.txt ] || { echo "::error::script is empty"; exit 1; }
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install ffmpeg + deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          pip install -q -r requirements.txt
+
+      - name: Face model
+        run: |
+          mkdir -p assets/models
+          curl -fsSL -o assets/models/face_landmarker.task \
+            https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+
+      # Pexels clips are re-used across runs instead of re-downloaded every time.
+      - name: Restore b-roll cache
+        uses: actions/cache@v4
+        with:
+          path: assets/broll
+          key: broll-${{ github.run_id }}
+          restore-keys: broll-
+
+      - name: Render
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
+          GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          IN_NAME: ${{ inputs.name }}
+          IN_TTS: ${{ inputs.tts }}
+          IN_SPEED: ${{ inputs.speed }}
+          IN_WORKERS: ${{ inputs.workers }}
+        run: |
+          set -euo pipefail
+          [ -n "${GROQ_API_KEY}${GROQ_API_KEYS}" ] || { echo "::error::GROQ secrets missing (repo Settings -> Secrets)"; exit 1; }
+          [ -n "$PEXELS_API_KEY" ] || echo "::warning::PEXELS_API_KEY missing: b-roll will fail soft"
+          python reel.py --script work/script.txt --name "$IN_NAME" --tts "$IN_TTS" \
+            --speed "$IN_SPEED" --workers "$IN_WORKERS"
+          ls -la output
+          test -s "output/$IN_NAME.mp4"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ inputs.name }}-${{ github.run_number }}
+          path: |
+            output/*.mp4
+            edits/*.json
+          if-no-files-found: warn
+          retention-days: 14
