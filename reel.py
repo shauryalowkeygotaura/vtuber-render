@@ -7,7 +7,8 @@
   2. beats      performance.direct: Whisper + Groq emotion per sentence
   3. director   Groq picks spot / entrance / camera / arms / emotion / b-roll per shot
   4. edit.json  written to edits/<name>.json: edit any line by hand and re-run with --edit
-  5. compose    Pexels b-roll + puppet + moves + rim + captions -> output/<name>.mp4
+  5. compose    b-roll (Pexels and/or code-drawn scenes, --broll / --style) + puppet + moves + rim
+                + captions -> output/<name>.mp4
   6. soundtrack sound effects on the words + on the moves, voice kept clean (vtuber/soundtrack.py)
 
 Audio-only preview of a plan (20 s instead of minutes):  python -m vtuber.soundtrack edits/<name>.json --print
@@ -79,6 +80,11 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--no-broll", action="store_true")
+    ap.add_argument("--broll", choices=("stock", "styled", "mix"),
+                    help="stock = Pexels (default); styled = code-drawn scenes only; mix = Groq picks stock or drawn "
+                         "per shot (whichever shows the line best), drawn wherever stock has nothing good")
+    ap.add_argument("--style", choices=("papercut", "sketch", "auto"),
+                    help="look for drawn scenes: papercut, sketch (soft hand-drawn), auto (one per reel)")
     ap.add_argument("--music", default=None,
                     help="music bed: funky, lofi, chiptune, hiphop, piano, auto (default), a file path, or none")
     ap.add_argument("--dry", action="store_true", help="no music / voice FX / SFX, just the voice")
@@ -137,6 +143,12 @@ def main() -> int:
         edit["music"] = None if a.music == "none" else {"file": a.music} if Path(a.music).is_file() else {"mood": a.music}
     if a.dry:
         edit["soundtrack"] = False
+    if a.broll:   # saved into the plan, so a later --edit re-render keeps the same mode
+        edit["broll_mode"] = a.broll
+    if a.style:
+        edit["broll_style"] = a.style
+    if (a.broll or a.style) and not a.edit:
+        edit_path.write_text(json.dumps(edit, indent=1, ensure_ascii=False), encoding="utf-8")
     out = compose.render(edit, ROOT / "output" / f"{name}.mp4", use_broll=not a.no_broll, workers=a.workers)
     print(f"  video -> {out}")
     return 0

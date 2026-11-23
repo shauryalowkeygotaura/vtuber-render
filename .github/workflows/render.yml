@@ -30,6 +30,16 @@ on:
         description: "Parallel render processes (1 - 4)"
         required: false
         default: "3"
+      broll:
+        description: "Background: mix (Groq picks stock or drawn per shot), stock (Pexels only), styled (drawn only)"
+        type: choice
+        options: [mix, stock, styled]
+        default: mix
+      style:
+        description: "Look of drawn scenes"
+        type: choice
+        options: [auto, papercut, sketch]
+        default: auto
 
 concurrency:
   group: render-${{ github.ref }}
@@ -54,9 +64,13 @@ jobs:
           IN_NAME: ${{ inputs.name }}
           IN_SPEED: ${{ inputs.speed }}
           IN_WORKERS: ${{ inputs.workers }}
+          IN_BROLL: ${{ inputs.broll }}
+          IN_STYLE: ${{ inputs.style }}
         run: |
           set -euo pipefail
           [[ "$IN_NAME" =~ ^[a-z0-9][a-z0-9-]{0,59}$ ]] || { echo "::error::name must be a-z 0-9 -"; exit 1; }
+          [[ "$IN_BROLL" =~ ^(stock|styled|mix)$ ]] || { echo "::error::broll must be stock, styled or mix"; exit 1; }
+          [[ "$IN_STYLE" =~ ^(auto|papercut|sketch)$ ]] || { echo "::error::style must be auto, papercut or sketch"; exit 1; }
           [[ "$IN_SPEED" =~ ^(1(\.[0-9]{1,2})?|2(\.0{1,2})?)$ ]] || { echo "::error::speed must be 1.0-2.0"; exit 1; }
           [[ "$IN_WORKERS" =~ ^[1-4]$ ]] || { echo "::error::workers must be 1-4"; exit 1; }
           mkdir -p work
@@ -125,12 +139,14 @@ jobs:
           IN_TTS: ${{ inputs.tts }}
           IN_SPEED: ${{ inputs.speed }}
           IN_WORKERS: ${{ inputs.workers }}
+          IN_BROLL: ${{ inputs.broll }}
+          IN_STYLE: ${{ inputs.style }}
         run: |
           set -euo pipefail
           [ -n "${GROQ_API_KEY}${GROQ_API_KEYS}" ] || { echo "::error::GROQ secrets missing (repo Settings -> Secrets)"; exit 1; }
           [ -n "$PEXELS_API_KEY" ] || echo "::warning::PEXELS_API_KEY missing: b-roll will fail soft"
           python reel.py --script work/script.txt --name "$IN_NAME" --tts "$IN_TTS" \
-            --speed "$IN_SPEED" --workers "$IN_WORKERS"
+            --speed "$IN_SPEED" --workers "$IN_WORKERS" --broll "$IN_BROLL" --style "$IN_STYLE"
           ls -la output
           test -s "output/$IN_NAME.mp4"
           [ -s "output/$IN_NAME.mix.wav" ] || echo "::warning::soundtrack mix failed: this reel has the DRY voice only (see 'soundtrack failed' above)"

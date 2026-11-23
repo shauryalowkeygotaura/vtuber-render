@@ -26,7 +26,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from vtuber import broll, moves
+from vtuber import broll, moves, styled
 from vtuber.mechhand import TOOLS
 from vtuber.avatar import Rig
 from vtuber.puppet import Puppet
@@ -256,16 +256,48 @@ def render(edit: dict, out: Path, puppet: Puppet | None = None, use_broll: bool 
     beats = [clean(b) for b in edit["beats"]]
     used: set[str] = set()
     clips: list = []
-    for b in beats:
+    # b-roll mode lives in the plan so `--edit` re-renders keep it: stock | styled | mix (Groq decides per shot)
+    mode = edit.get("broll_mode", "stock")
+    mode = mode if mode in styled.MODES else "stock"
+    look = styled.choose_style(edit.get("broll_style", "auto"),
+                               " ".join(b.get("text", "") for b in beats[:2]))
+    specs: dict[int, dict] = {}
+    if mode == "mix" and use_broll:   # Groq reads every line and calls stock vs drawn per shot
+        planned = styled.plan([b.get("text", "") for b in beats], decide=True)
+        specs = dict(enumerate(planned))
+        drawn = styled.decide(beats, planned)
+        print(f"  mix: Groq chose drawn for shots {sorted(drawn)}, stock for the rest")
+    else:
+        drawn = styled.pick(beats, mode) if use_broll else set()
+
+    def draw(i: int) -> Path | None:
+        if i not in specs:   # plan lazily: one Groq call for every shot that needs a card
+            todo = sorted(k for k in set(drawn) | {i} if k not in specs)
+            for k, s_ in zip(todo, styled.plan([beats[k].get("text", "") for k in todo])):
+                specs[k] = s_
+        try:
+            return styled.render(look, specs[i], beats[i]["end"] - beats[i]["start"] + 0.2,
+                                 seed=edit.get("seed", 7) + i)
+        except RuntimeError as e:
+            print(f"  styled failed, shot {i}: {e}", file=sys.stderr)
+            return None
+
+    for i, b in enumerate(beats):
         clip = None
-        if use_broll and b.get("broll"):
+        if i in drawn:
+            clip = draw(i)
+        if clip is None and use_broll and b.get("broll"):
             try:
-                clip = broll.fetch(b["broll"], b["end"] - b["start"] + 0.2, used, line=b.get("text", ""))
+                clip = broll.fetch(b["broll"], b["end"] - b["start"] + 0.2, used, line=b.get("text", ""),
+                                   neutral=mode == "stock")
             except RuntimeError as e:
                 print(f"  broll off: {e}", file=sys.stderr)
-                use_broll = False
+                use_broll = mode != "stock"   # no Pexels key: mix still draws its scenes
+        if clip is None and mode == "mix" and i not in drawn:
+            clip = draw(i)   # stock had nothing on-topic (or no key): a drawn card beats a generic clip
         clips.append(clip)
-    print(f"  b-roll ready in {time.time() - t0:.0f}s")
+    print(f"  b-roll ready in {time.time() - t0:.0f}s ({mode}, {look}, "
+          f"{sum(1 for c in clips if c and Path(c).name.startswith('styled_'))}/{len(clips)} drawn)")
     n = int(round(beats[-1]["end"] * FPS))
     workers = workers or default_workers()
     seg_dir = out.parent / f".{out.stem}_segs"

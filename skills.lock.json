@@ -1,0 +1,39 @@
+{
+  "_about": "Third-party video-style skills installed into .claude/skills/ by scripts/install_skills.py. Code/HyperFrames/Remotion renderers only: no Higgsfield, no paid image/video models. Pinned commits; bump a sha to update.",
+  "_excluded": {
+    "undsky/doudou-remotion-whiteboard-skill": "CC BY-NC 4.0, blocks monetized reels",
+    "Alisa0808/vox-director, pyang5166/gbro-collage-broll, MegaTroll222/VOX-COLLAGE-BROLL, kakaxi12/vox-director-codex, lemomo-ai/lemo-animi, aijiduonadegou/Paper-Cut": "need paid image/video models",
+    "yenceesanjeev/2d-character-sketch": "flagged CAUTION by agentskillshub"
+  },
+  "rename": {
+    "animate": "papertrail-animate", "finish": "papertrail-finish", "make": "papertrail-make",
+    "new-character": "papertrail-new-character", "new-style": "papertrail-new-style",
+    "pitch": "papertrail-pitch", "write": "papertrail-write",
+    "breakdown": "anim-breakdown", "graph": "anim-graph", "soundtrack": "jsanim-soundtrack",
+    "referans": "kalem-referans", "collage": "vox-collage"
+  },
+  "repos": [
+    {"repo": "wheresryan22/anatomy", "sha": "1482e8469b0a9e0d8cc18ea2740a01423d29ae80", "style": "isometric exploded-object figures (SVG/WebGL)"},
+    {"repo": "0xS4N4TG/papercut-explainer", "sha": "8d791944453f4e4b2d79322016762464173b1829", "style": "cut-paper vertical explainers, 9-skill pipeline (Remotion)"},
+    {"repo": "haiderfarooq3/paper-reel", "sha": "9c5bc57b5e10a0cf07d3935c91c2ac30971c69b2", "style": "cut-paper 9:16 reels, voice-timed, no API keys"},
+    {"repo": "tmoody1973/pasteup", "sha": "1e4bd868d4f1c4af9abedc408e4f559e447aa206", "style": "halftone paper-collage stop-motion wobble (ignore its fal.ai section)"},
+    {"repo": "pyang5166/gbro-collage-info", "sha": "0b97a817a6b65285d8aa90431079500a29092eab", "style": "halftone collage infographics (HyperFrames, no image models)"},
+    {"repo": "audrey-560/hyperframes-tactile-collage", "sha": "ef6a49f5a250e6b3b1a0839cafc7a2d43872e619", "style": "tactile paper scrapbook (HyperFrames)"},
+    {"repo": "rafiimanggala/paper-collage-skill", "sha": "1443c655d3b9928a8e2d2e56388fcd6de082c708", "style": "DIY paper collage (HyperFrames)"},
+    {"repo": "prakhar2603/collage-skill", "sha": "b818d3d9ac9c481ea5005a791520a801c5aa85cd", "style": "Vox-style paper collage (HyperFrames, free)"},
+    {"repo": "jabbarlee/open-papertrail", "sha": "ec46ea8c24cead98e1432319cc47e01d4eb0dcd1", "style": "vertical videos drawn in code, 4 styles"},
+    {"repo": "alexgreensh/anidoodle", "sha": "4ae27d2c281fcfd01bce87ab13dc5ad4df81a795", "style": "art + animation as code, dozens of styles"},
+    {"repo": "JDhruv14/line-art-animation", "sha": "c43d698913cf0ad44f984c7ae14c5348010594d3", "style": "ink line-art SVG figures"},
+    {"repo": "buildwithhanif/claude-animation-skill", "sha": "4ddb8c80fdec96dc9f55d4b9bdee60bde6f0134b", "style": "hand-drawn 2D cels, brush/watercolour pen"},
+    {"repo": "iart-ai/javascript-animation-skills", "sha": "060f7467a6e5ae5b57c90c9cb1b3508c13b88e49", "style": "hand-drawn canvas, zero image assets, synth sound"},
+    {"repo": "reedodev/explainer-studio", "sha": "05fdbab0e0009f1d53d9cbd157ed0b2960c9f8d8", "style": "explainers in 8 hand-drawn styles"},
+    {"repo": "Matteoikarieth96/whiteboard-video-skill", "sha": "8358f531a61b6ea5365588790e08311794b51087", "style": "whiteboard hand-drawn explainer"},
+    {"repo": "Changroro/code-video", "sha": "03da4e3ab149c4134a9a72eec499e1a2a41601ea", "style": "hand-drawn + 8-bit promo"},
+    {"repo": "PHANTOMTONYT/motion-design-skills", "sha": "1aba2ac2e1af1a0a2496b6939c371fe1b7f5e655", "style": "3D toy, kinetic type, hand-drawn cartoon, diagrams, charts"},
+    {"repo": "artemnovitckii/claude-animation-skills", "sha": "86f70106c9aeae1334184467da5776c533ada3bc", "style": "kurzgesagt, stick-figure, low-poly, minecraft, maps..."},
+    {"repo": "hi-nikola/hand-drawn-explainer-video-nikola", "sha": "3ee5d1c01fe8d34f5162c4aace418753f85bd0d9", "style": "stroke-by-stroke hand-drawn explainer (Chinese docs)"},
+    {"repo": "leodavincs/kalem", "sha": "ba19c9f20b816ab00c8bb3445e3ddf597f26ae6d", "style": "per-scene engine picker: Paper.js/PixiJS/HyperFrames/Three (Turkish docs)"},
+    {"repo": "lazypay/Archscribe", "sha": "46ea42cfc6c557ab238867c390bb18320fd36769", "style": "hand-drawn animated architecture diagrams"},
+    {"repo": "cclank/lanshu-animated-architecture-diagram", "sha": "c17f5b4e5de99d3603b364530ad04d930d038d24", "style": "hand-drawn animated architecture diagrams"}
+  ]
+}

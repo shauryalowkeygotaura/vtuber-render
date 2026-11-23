@@ -136,9 +136,11 @@ def judge(line: str, term: str, cands: list[dict]) -> tuple[int | None, str]:
         return 0, ""
 
 
-def fetch(term: str, seconds: float, used: set[str], line: str = "") -> Path | None:
+def fetch(term: str, seconds: float, used: set[str], line: str = "", neutral: bool = True) -> Path | None:
     """Download (cached) and conform one clip to 1080x1920/30fps/no audio, `seconds` long.
-    With `line`, Groq judges the candidates; if none fit it tries its better query once."""
+    With `line`, Groq judges the candidates; if none fit it tries its better query once.
+    neutral=False: when nothing fits, return None instead of a generic backdrop (the caller
+    draws a styled scene there instead, see vtuber/styled.py)."""
     cands = search(term, seconds, used)
     pick, alt = judge(line, term, cands)
     if pick is None and alt and alt != term:
@@ -147,6 +149,9 @@ def fetch(term: str, seconds: float, used: set[str], line: str = "") -> Path | N
         if apick is not None:
             print(f"  broll: '{term}' didn't fit, using '{alt}'")
             term, cands, pick = alt, alt_cands, apick
+    if pick is None and line and not neutral:
+        print(f"  broll: nothing fits '{term}', leaving it to a drawn scene")
+        return None
     if pick is None and line:
         # nothing on-topic exists: a neutral moving background beats a wrong one (CN Tower for "no internet")
         print(f"  broll: nothing fits '{term}', using a neutral background", file=sys.stderr)
