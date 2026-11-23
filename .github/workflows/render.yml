@@ -1,8 +1,13 @@
 # Renders a reel on GitHub's machine instead of the PC. Actions tab -> render -> Run workflow.
 # The mp4 + edit plan come back as a downloadable artifact. Nothing is posted anywhere.
+# Scheduled runs render the oldest script in scripts/queue/ (then move it to scripts/done/);
+# an empty queue or missing GROQ secret skips the run cleanly.
 name: render
 
 on:
+  # 04:30 UTC = 10:00 IST daily: the reel is ready well before the 7-9 PM IST Reels/Shorts peak.
+  schedule:
+    - cron: "30 4 * * *"
   workflow_dispatch:
     inputs:
       script:
@@ -46,7 +51,16 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write   # scheduled runs move the rendered script from scripts/queue/ to scripts/done/
+
+# Manual runs use the form; scheduled runs get these defaults.
+env:
+  IN_NAME: ${{ inputs.name || 'reel' }}
+  IN_TTS: ${{ inputs.tts || 'orpheus' }}
+  IN_SPEED: ${{ inputs.speed || '1.5' }}
+  IN_WORKERS: ${{ inputs.workers || '3' }}
+  IN_BROLL: ${{ inputs.broll || 'mix' }}
+  IN_STYLE: ${{ inputs.style || 'auto' }}
 
 jobs:
   render:
@@ -61,13 +75,22 @@ jobs:
         env:
           IN_SCRIPT: ${{ inputs.script }}
           IN_FILE: ${{ inputs.script_file }}
-          IN_NAME: ${{ inputs.name }}
-          IN_SPEED: ${{ inputs.speed }}
-          IN_WORKERS: ${{ inputs.workers }}
-          IN_BROLL: ${{ inputs.broll }}
-          IN_STYLE: ${{ inputs.style }}
+          HAS_GROQ: ${{ secrets.GROQ_API_KEY != '' || secrets.GROQ_API_KEYS != '' }}
         run: |
           set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            if [ "$HAS_GROQ" != "true" ]; then
+              echo "::notice::GROQ secrets not set yet: scheduled render skipped"; echo "SKIP=true" >> "$GITHUB_ENV"; exit 0
+            fi
+            IN_FILE=$(ls scripts/queue/*.txt 2>/dev/null | sort | head -1 || true)
+            if [ -z "$IN_FILE" ]; then
+              echo "::notice::scripts/queue/ is empty: nothing to render"; echo "SKIP=true" >> "$GITHUB_ENV"; exit 0
+            fi
+            IN_NAME=$(basename "$IN_FILE" .txt)
+            echo "IN_NAME=$IN_NAME" >> "$GITHUB_ENV"
+            echo "QUEUED=$IN_FILE" >> "$GITHUB_ENV"
+            IN_SCRIPT=""
+          fi
           [[ "$IN_NAME" =~ ^[a-z0-9][a-z0-9-]{0,59}$ ]] || { echo "::error::name must be a-z 0-9 -"; exit 1; }
           [[ "$IN_BROLL" =~ ^(stock|styled|mix)$ ]] || { echo "::error::broll must be stock, styled or mix"; exit 1; }
           [[ "$IN_STYLE" =~ ^(auto|papercut|sketch)$ ]] || { echo "::error::style must be auto, papercut or sketch"; exit 1; }
@@ -76,7 +99,7 @@ jobs:
           mkdir -p work
           if [ -n "$IN_SCRIPT" ]; then
             printf '%s' "$IN_SCRIPT" > work/script.txt
-          elif [[ "$IN_FILE" =~ ^scripts/[a-z0-9-]+\.txt$ ]] && [ -f "$IN_FILE" ]; then
+          elif [[ "$IN_FILE" =~ ^scripts/(queue/)?[a-z0-9-]+\.txt$ ]] && [ -f "$IN_FILE" ]; then
             cp "$IN_FILE" work/script.txt
           else
             echo "::error::give script text, or script_file like scripts/name.txt that exists"; exit 1
@@ -84,11 +107,13 @@ jobs:
           [ -s work/script.txt ] || { echo "::error::script is empty"; exit 1; }
 
       - uses: actions/setup-python@v5
+        if: env.SKIP != 'true'
         with:
           python-version: "3.13"
           cache: pip
 
       - name: Install ffmpeg + deps
+        if: env.SKIP != 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg libegl1 libgles2
@@ -96,11 +121,13 @@ jobs:
 
       # talk.py imports Orpheus TTS from the sibling ../paralang checkout.
       - name: Sibling repo (paralang)
+        if: env.SKIP != 'true'
         run: git clone -q --depth 1 https://github.com/shauryalowkeygotaura/paralang.git ../paralang
 
       # Meme clips (Supercell audio) live in a PRIVATE repo, read via a read-only
       # deploy key. No key set -> reels just use the built-in SFX.
       - name: Meme clips (private repo)
+        if: env.SKIP != 'true'
         env:
           MEMES_KEY: ${{ secrets.MEMES_DEPLOY_KEY }}
         run: |
@@ -116,6 +143,7 @@ jobs:
           echo "memes: $(ls assets/sfx/memes/*.mp3 | wc -l) clips"
 
       - name: Face model
+        if: env.SKIP != 'true'
         run: |
           mkdir -p assets/models
           curl -fsSL -o assets/models/face_landmarker.task \
@@ -123,6 +151,7 @@ jobs:
 
       # Pexels clips are re-used across runs instead of re-downloaded every time.
       - name: Restore b-roll cache
+        if: env.SKIP != 'true'
         uses: actions/cache@v4
         with:
           path: assets/broll
@@ -130,17 +159,12 @@ jobs:
           restore-keys: broll-
 
       - name: Render
+        if: env.SKIP != 'true'
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
           GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          IN_NAME: ${{ inputs.name }}
-          IN_TTS: ${{ inputs.tts }}
-          IN_SPEED: ${{ inputs.speed }}
-          IN_WORKERS: ${{ inputs.workers }}
-          IN_BROLL: ${{ inputs.broll }}
-          IN_STYLE: ${{ inputs.style }}
         run: |
           set -euo pipefail
           [ -n "${GROQ_API_KEY}${GROQ_API_KEYS}" ] || { echo "::error::GROQ secrets missing (repo Settings -> Secrets)"; exit 1; }
@@ -152,11 +176,20 @@ jobs:
           [ -s "output/$IN_NAME.mix.wav" ] || echo "::warning::soundtrack mix failed: this reel has the DRY voice only (see 'soundtrack failed' above)"
 
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && env.SKIP != 'true'
         with:
-          name: ${{ inputs.name }}-${{ github.run_number }}
+          name: ${{ env.IN_NAME }}-${{ github.run_number }}
           path: |
             output/*.mp4
             edits/*.json
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Mark queued script done
+        if: success() && github.event_name == 'schedule' && env.SKIP != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p scripts/done
+          git mv "$QUEUED" "scripts/done/$(basename "$QUEUED")"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com"             commit -q -m "render: $(basename "$QUEUED") done (run ${{ github.run_number }})"
+          git push -q
