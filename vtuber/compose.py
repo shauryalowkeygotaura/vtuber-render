@@ -297,7 +297,7 @@ def render(edit: dict, out: Path, puppet: Puppet | None = None, use_broll: bool 
             clip = draw(i)   # stock had nothing on-topic (or no key): a drawn card beats a generic clip
         clips.append(clip)
     print(f"  b-roll ready in {time.time() - t0:.0f}s ({mode}, {look}, "
-          f"{sum(1 for c in clips if c and Path(c).name.startswith('styled_'))}/{len(clips)} drawn)")
+          f"{sum(1 for c in clips if c and Path(c).name.startswith('drawn_'))}/{len(clips)} drawn)")
     n = int(round(beats[-1]["end"] * FPS))
     workers = workers or default_workers()
     seg_dir = out.parent / f".{out.stem}_segs"
