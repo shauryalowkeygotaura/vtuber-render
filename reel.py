@@ -83,8 +83,8 @@ def main() -> int:
     ap.add_argument("--broll", choices=("stock", "styled", "mix"),
                     help="stock = Pexels (default); styled = code-drawn scenes only; mix = Groq picks stock or drawn "
                          "per shot (whichever shows the line best), drawn wherever stock has nothing good")
-    ap.add_argument("--style", choices=("papercut", "sketch", "auto"),
-                    help="look for drawn scenes: papercut, sketch (soft hand-drawn), auto (one per reel)")
+    ap.add_argument("--style", choices=("papercut", "sketch", "anatomy", "auto"),
+                    help="look for drawn scenes: papercut, sketch (soft hand-drawn), anatomy (isometric instrument), auto (papercut or sketch, one per reel)")
     ap.add_argument("--music", default=None,
                     help="music bed: funky, lofi, chiptune, hiphop, piano, auto (default), a file path, or none")
     ap.add_argument("--dry", action="store_true", help="no music / voice FX / SFX, just the voice")

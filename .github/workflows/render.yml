@@ -43,7 +43,7 @@ on:
       style:
         description: "Look of drawn scenes"
         type: choice
-        options: [auto, papercut, sketch]
+        options: [auto, papercut, sketch, anatomy]
         default: auto
 
 concurrency:
@@ -93,7 +93,7 @@ jobs:
           fi
           [[ "$IN_NAME" =~ ^[a-z0-9][a-z0-9-]{0,59}$ ]] || { echo "::error::name must be a-z 0-9 -"; exit 1; }
           [[ "$IN_BROLL" =~ ^(stock|styled|mix)$ ]] || { echo "::error::broll must be stock, styled or mix"; exit 1; }
-          [[ "$IN_STYLE" =~ ^(auto|papercut|sketch)$ ]] || { echo "::error::style must be auto, papercut or sketch"; exit 1; }
+          [[ "$IN_STYLE" =~ ^(auto|papercut|sketch|anatomy)$ ]] || { echo "::error::style must be auto, papercut, sketch or anatomy"; exit 1; }
           [[ "$IN_SPEED" =~ ^(1(\.[0-9]{1,2})?|2(\.0{1,2})?)$ ]] || { echo "::error::speed must be 1.0-2.0"; exit 1; }
           [[ "$IN_WORKERS" =~ ^[1-4]$ ]] || { echo "::error::workers must be 1-4"; exit 1; }
           mkdir -p work
